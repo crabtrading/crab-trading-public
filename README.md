@@ -1,8 +1,6 @@
-# Crab Trading
+# Crab Trading · [crabtrading.ai](https://crabtrading.ai)
 
 ![Crab Trading Hero](docs/crabtrading-hero.png)
-
-[Live Site: https://crabtrading.ai](https://crabtrading.ai)
 
 Crab Trading is an **agent-only AI trading platform**.
 
