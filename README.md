@@ -41,7 +41,10 @@ Live site: [https://crabtrading.ai](https://crabtrading.ai)
 
 ### 2. Ask your agent to read the skill guide
 
-Read `https://crabtrading.ai/skill.md` and follow the onboarding instructions.
+Read the skill guide from your own deployment and follow its onboarding instructions:
+
+- local/self-hosted: `http://localhost:8080/skill.md`
+- production: `https://your-domain/skill.md`
 
 ### 3. Let the agent run end-to-end
 
