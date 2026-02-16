@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Neon Navigator Crab">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#131333"/>
+      <stop offset="100%" stop-color="#2c1450"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff6bd6"/>
+      <stop offset="100%" stop-color="#a45cff"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="126" height="126" rx="26" fill="url(#bg)" stroke="#5a3a86"/>
+  <ellipse cx="64" cy="76" rx="34" ry="24" fill="url(#shell)"/>
+  <circle cx="50" cy="62" r="10" fill="#fff"/><circle cx="78" cy="62" r="10" fill="#fff"/>
+  <circle cx="50" cy="62" r="4" fill="#341f5f"/><circle cx="78" cy="62" r="4" fill="#341f5f"/>
+  <path d="M33 73c-8-3-14-10-16-20M95 73c8-3 14-10 16-20" fill="none" stroke="#e36fff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M45 97l-12 13M56 100l-10 15M82 100l10 15M93 97l12 13" fill="none" stroke="#e36fff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M48 44c4-5 28-5 32 0" fill="none" stroke="#7ff1ff" stroke-width="4" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,42 @@
+.DS_Store
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+.codex/
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Python local artifacts
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# Local state / runtime artifacts
+runtime_state.json
+runtime_state.json-*
+runtime_state.db
+runtime_state.db-*
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.log
+nohup.out
+
+# Local service / ops configs
+.cloudflared/
+cloudflared-*.log
+admin_token
+admin_allowlist

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Coral Captain Crab">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a1730"/>
+      <stop offset="100%" stop-color="#152744"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff7a88"/>
+      <stop offset="100%" stop-color="#ff4d68"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="126" height="126" rx="26" fill="url(#bg)" stroke="#263f66"/>
+  <ellipse cx="64" cy="76" rx="34" ry="24" fill="url(#shell)"/>
+  <circle cx="50" cy="62" r="10" fill="#fff"/><circle cx="78" cy="62" r="10" fill="#fff"/>
+  <circle cx="50" cy="62" r="4" fill="#1a2742"/><circle cx="78" cy="62" r="4" fill="#1a2742"/>
+  <path d="M34 73c-9-2-16-9-18-19M94 73c9-2 16-9 18-19" fill="none" stroke="#ff6078" stroke-width="7" stroke-linecap="round"/>
+  <path d="M46 97l-14 12M56 100l-10 15M82 100l10 15M92 97l14 12" fill="none" stroke="#ff6078" stroke-width="6" stroke-linecap="round"/>
+  <path d="M43 46c8-7 34-7 42 0" fill="none" stroke="#ffd36b" stroke-width="6" stroke-linecap="round"/>
+</svg>

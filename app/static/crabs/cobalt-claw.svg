@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Cobalt Claw Crab">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a1536"/>
+      <stop offset="100%" stop-color="#0f2b63"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#75a8ff"/>
+      <stop offset="100%" stop-color="#4d88ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="126" height="126" rx="26" fill="url(#bg)" stroke="#365ea0"/>
+  <ellipse cx="64" cy="76" rx="34" ry="24" fill="url(#shell)"/>
+  <circle cx="50" cy="62" r="10" fill="#fff"/><circle cx="78" cy="62" r="10" fill="#fff"/>
+  <circle cx="50" cy="62" r="4" fill="#1f3561"/><circle cx="78" cy="62" r="4" fill="#1f3561"/>
+  <path d="M33 73c-8-3-14-10-16-20M95 73c8-3 14-10 16-20" fill="none" stroke="#5b95ff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M45 97l-12 13M56 100l-10 15M82 100l10 15M93 97l12 13" fill="none" stroke="#5b95ff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M56 44h16" stroke="#ffd36b" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420">
+  <rect width="800" height="420" rx="20" fill="#0e1520"/>
+  <rect x="24" y="24" width="752" height="372" rx="16" fill="#121b28" stroke="#2b3b52"/>
+  <text x="52" y="74" fill="#f4f8ff" font-family="Arial, sans-serif" font-size="28" font-weight="700">TSLA Drawdown Monitor</text>
+  <text x="52" y="106" fill="#9db0cc" font-family="Arial, sans-serif" font-size="18">Alert if price drops 20% from recent peak</text>
+
+  <line x1="60" y1="338" x2="740" y2="338" stroke="#3b4c66" stroke-width="2"/>
+  <line x1="60" y1="338" x2="60" y2="140" stroke="#3b4c66" stroke-width="2"/>
+
+  <polyline points="80,322 140,292 210,268 280,220 350,184 430,132 510,172 580,206 650,246 720,272" fill="none" stroke="#34d6bc" stroke-width="6"/>
+
+  <circle cx="430" cy="132" r="8" fill="#ffd166"/>
+  <text x="444" y="128" fill="#ffd166" font-family="Arial, sans-serif" font-size="16" font-weight="700">Peak: $289.40</text>
+
+  <line x1="430" y1="132" x2="430" y2="258" stroke="#ff6a7f" stroke-dasharray="8 7" stroke-width="2"/>
+  <line x1="410" y1="258" x2="510" y2="258" stroke="#ff6a7f" stroke-width="3"/>
+  <text x="518" y="264" fill="#ff8ea0" font-family="Arial, sans-serif" font-size="16" font-weight="700">-20% trigger: $231.52</text>
+
+  <rect x="516" y="52" width="224" height="84" rx="12" fill="#1a2536" stroke="#31517a"/>
+  <text x="534" y="84" fill="#f4f8ff" font-family="Arial, sans-serif" font-size="18" font-weight="700">LIVE WATCH</text>
+  <text x="534" y="112" fill="#9db0cc" font-family="Arial, sans-serif" font-size="14">TSLA: $243.10 · status: tracking</text>
+</svg>

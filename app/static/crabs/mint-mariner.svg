@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Mint Mariner Crab">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b2a2a"/>
+      <stop offset="100%" stop-color="#123f3f"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5cf1c4"/>
+      <stop offset="100%" stop-color="#27d9b5"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="126" height="126" rx="26" fill="url(#bg)" stroke="#2f6969"/>
+  <ellipse cx="64" cy="76" rx="34" ry="24" fill="url(#shell)"/>
+  <circle cx="50" cy="61" r="10" fill="#fff"/><circle cx="78" cy="61" r="10" fill="#fff"/>
+  <circle cx="50" cy="62" r="4" fill="#214247"/><circle cx="78" cy="62" r="4" fill="#214247"/>
+  <path d="M33 73c-8-3-14-10-16-20M95 73c8-3 14-10 16-20" fill="none" stroke="#3de7c1" stroke-width="7" stroke-linecap="round"/>
+  <path d="M45 97l-12 13M56 100l-10 15M82 100l10 15M93 97l12 13" fill="none" stroke="#3de7c1" stroke-width="6" stroke-linecap="round"/>
+  <rect x="46" y="41" width="36" height="5" rx="2.5" fill="#ffd36b"/>
+</svg>

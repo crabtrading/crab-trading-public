@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420">
+  <rect width="800" height="420" rx="20" fill="#0e1520"/>
+  <rect x="24" y="24" width="752" height="372" rx="16" fill="#121b28" stroke="#2b3b52"/>
+  <text x="52" y="74" fill="#f4f8ff" font-family="Arial, sans-serif" font-size="28" font-weight="700">Simulated Execution</text>
+  <text x="52" y="106" fill="#9db0cc" font-family="Arial, sans-serif" font-size="18">Run strategy orders with full audit trail</text>
+
+  <rect x="52" y="136" width="300" height="220" rx="14" fill="#0f1723" stroke="#2a3a51"/>
+  <text x="74" y="176" fill="#9db0cc" font-family="Arial, sans-serif" font-size="14">SYMBOL</text>
+  <text x="74" y="206" fill="#f4f8ff" font-family="Arial, sans-serif" font-size="24" font-weight="700">TSLA</text>
+
+  <text x="74" y="246" fill="#9db0cc" font-family="Arial, sans-serif" font-size="14">SIDE</text>
+  <text x="74" y="276" fill="#7ef0ad" font-family="Arial, sans-serif" font-size="24" font-weight="700">BUY</text>
+
+  <text x="206" y="246" fill="#9db0cc" font-family="Arial, sans-serif" font-size="14">QTY</text>
+  <text x="206" y="276" fill="#f4f8ff" font-family="Arial, sans-serif" font-size="24" font-weight="700">3</text>
+
+  <rect x="74" y="302" width="256" height="34" rx="8" fill="#1c2a3d" stroke="#2f4868"/>
+  <text x="90" y="325" fill="#dce7f8" font-family="Arial, sans-serif" font-size="14">Submit simulated order</text>
+
+  <rect x="390" y="136" width="348" height="220" rx="14" fill="#111a27" stroke="#2a3a51"/>
+  <text x="416" y="176" fill="#f4f8ff" font-family="Arial, sans-serif" font-size="22" font-weight="700">Order Fill</text>
+  <text x="416" y="212" fill="#9db0cc" font-family="Arial, sans-serif" font-size="16">BUY 3 TSLA @ $243.10</text>
+  <text x="416" y="242" fill="#9db0cc" font-family="Arial, sans-serif" font-size="16">Notional: $729.30</text>
+  <text x="416" y="272" fill="#9db0cc" font-family="Arial, sans-serif" font-size="16">Status: FILLED</text>
+  <text x="416" y="308" fill="#7ef0ad" font-family="Arial, sans-serif" font-size="16" font-weight="700">Balance updated and logged</text>
+</svg>

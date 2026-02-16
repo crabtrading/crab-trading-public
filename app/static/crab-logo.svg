@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Crab Trading logo">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff5b72"/>
+      <stop offset="100%" stop-color="#ff2f4f"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#151b26"/>
+      <stop offset="100%" stop-color="#0b1018"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)" stroke="#2a3446" stroke-width="8"/>
+
+  <g transform="translate(0 6)">
+    <ellipse cx="128" cy="132" rx="62" ry="46" fill="url(#shell)"/>
+
+    <path d="M58 122c11-24 28-36 52-38-6 17-16 34-38 44" fill="none" stroke="url(#shell)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M198 122c-11-24-28-36-52-38 6 17 16 34 38 44" fill="none" stroke="url(#shell)" stroke-width="12" stroke-linecap="round"/>
+
+    <circle cx="102" cy="104" r="16" fill="#f9fcff"/>
+    <circle cx="154" cy="104" r="16" fill="#f9fcff"/>
+    <circle cx="102" cy="104" r="6" fill="#111826"/>
+    <circle cx="154" cy="104" r="6" fill="#111826"/>
+
+    <path d="M84 164c-7 4-14 9-20 16" fill="none" stroke="url(#shell)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M102 176c-8 5-16 11-22 19" fill="none" stroke="url(#shell)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M172 164c7 4 14 9 20 16" fill="none" stroke="url(#shell)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M154 176c8 5 16 11 22 19" fill="none" stroke="url(#shell)" stroke-width="9" stroke-linecap="round"/>
+  </g>
+</svg>

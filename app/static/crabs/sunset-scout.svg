@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Sunset Scout Crab">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1b1238"/>
+      <stop offset="100%" stop-color="#2d1b54"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff9a56"/>
+      <stop offset="100%" stop-color="#ff5b6f"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="126" height="126" rx="26" fill="url(#bg)" stroke="#4a367a"/>
+  <ellipse cx="64" cy="76" rx="34" ry="24" fill="url(#shell)"/>
+  <circle cx="50" cy="61" r="10" fill="#fff"/><circle cx="78" cy="61" r="10" fill="#fff"/>
+  <circle cx="49" cy="61" r="4" fill="#23213f"/><circle cx="79" cy="61" r="4" fill="#23213f"/>
+  <path d="M33 73c-8-4-14-11-16-20M95 73c8-4 14-11 16-20" fill="none" stroke="#ff7a63" stroke-width="7" stroke-linecap="round"/>
+  <path d="M45 97l-12 13M56 100l-10 15M82 100l10 15M93 97l12 13" fill="none" stroke="#ff7a63" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="64" cy="42" r="7" fill="#7fe6ff"/>
+</svg>
