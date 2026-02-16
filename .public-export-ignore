@@ -19,3 +19,4 @@
 - /.cloudflared/
 - /admin_token
 - /admin_allowlist
+- /sync_public_safe.sh
