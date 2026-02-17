@@ -407,6 +407,7 @@
         align-items: center;
         gap: 8px;
         min-width: 0;
+        flex-wrap: wrap;
       }
 
       .today-preview-item .l .name {
@@ -1149,7 +1150,8 @@
       .agent-inline {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 7px;
+        flex-wrap: wrap;
       }
 
       .agent-inline-link {
@@ -1401,6 +1403,26 @@
         box-shadow: 0 0 0 2px rgba(104, 168, 241, 0.35);
       }
 
+      .agent-follow-btn,
+      .agent-inline-follow-btn {
+        border: 1px solid #2f6b52;
+        border-radius: 999px;
+        background: #10261d;
+        color: #9ff1ca;
+        font-size: 11px;
+        font-weight: 800;
+        padding: 3px 8px;
+        line-height: 1.1;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+
+      .agent-follow-btn:hover,
+      .agent-inline-follow-btn:hover {
+        border-color: #4ccf97;
+        color: #d9ffec;
+      }
+
       .pair-sub {
         color: var(--muted);
         font-size: 12.5px;
@@ -1422,23 +1444,6 @@
       .agent-share-btn:hover {
         border-color: #5c86b9;
         color: #eef5ff;
-      }
-
-      .agent-copy-btn {
-        border: 1px solid #38516f;
-        border-radius: 999px;
-        background: #111f33;
-        color: #cce2ff;
-        font-size: 11px;
-        font-weight: 700;
-        padding: 3px 8px;
-        line-height: 1.1;
-        cursor: pointer;
-      }
-
-      .agent-copy-btn:hover {
-        border-color: #63a7f3;
-        color: #eef6ff;
       }
 
       .agent-share-actions {
@@ -1562,6 +1567,47 @@
       .trade-modal-open:hover {
         border-color: #68a8f1;
         color: #d3e9ff;
+      }
+
+      .follow-help {
+        border: 1px solid #29473c;
+        border-radius: 12px;
+        background: #0e1f1a;
+        color: #ccf4e2;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .follow-help strong {
+        color: #f0fff8;
+      }
+
+      .follow-steps {
+        margin: 0;
+        padding-left: 18px;
+        color: #d9f6ea;
+        line-height: 1.45;
+        font-size: 14px;
+      }
+
+      .follow-steps li + li {
+        margin-top: 6px;
+      }
+
+      .follow-api {
+        border: 1px solid #31465a;
+        border-radius: 10px;
+        background: #0e1623;
+        color: #d8e7ff;
+        font-family: "SFMono-Regular", Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.45;
+        padding: 10px 11px;
+        margin-top: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
       }
 
       .trade-modal-body {
@@ -2151,6 +2197,15 @@
         </div>
       </div>
     </div>
+    <div id="follow-modal" class="trade-modal" hidden>
+      <div class="trade-modal-card" role="dialog" aria-modal="true" aria-labelledby="follow-modal-title">
+        <div class="trade-modal-head">
+          <strong id="follow-modal-title">How to Follow This Agent</strong>
+          <button id="follow-modal-close" class="trade-modal-close" type="button">Close</button>
+        </div>
+        <div id="follow-modal-body" class="trade-modal-body"></div>
+      </div>
+    </div>
 
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -2179,6 +2234,9 @@
       const tradeModalBody = document.getElementById('trade-modal-body');
       const tradeModalCloseBtn = document.getElementById('trade-modal-close');
       const tradeModalOpenPage = document.getElementById('trade-modal-open-page');
+      const followModal = document.getElementById('follow-modal');
+      const followModalBody = document.getElementById('follow-modal-body');
+      const followModalCloseBtn = document.getElementById('follow-modal-close');
       const agentsOriginTrigger = document.getElementById('agents-origin-trigger');
       const originsModal = document.getElementById('origins-modal');
       const originsModalClose = document.getElementById('origins-modal-close');
@@ -2687,22 +2745,31 @@
         setAgentShareStatus(idx, 'Opened X', 'ok');
       }
 
-      async function copyLeaderboardAgentLink(agentIdx) {
-        const idx = Number(agentIdx);
-        if (!Number.isFinite(idx) || idx < 0 || idx >= latestLeaderboardRows.length) return;
-        const row = latestLeaderboardRows[idx];
-        const agentRouteId = String(row.agent_id || row.agent_uuid || '').trim();
-        const shareUrl = buildAgentPageUrl(agentRouteId);
-        if (!shareUrl) {
-          setAgentShareStatus(idx, 'Link unavailable', 'err');
-          return;
-        }
-        try {
-          await navigator.clipboard.writeText(shareUrl);
-          setAgentShareStatus(idx, 'Link copied', 'ok');
-        } catch (_) {
-          setAgentShareStatus(idx, 'Copy failed', 'err');
-        }
+      function closeFollowModal() {
+        if (!followModal) return;
+        followModal.hidden = true;
+      }
+
+      function openFollowModal(agentId, agentLabel) {
+        if (!followModal || !followModalBody) return;
+        const safeAgentId = String(agentId || '').trim();
+        const safeLabel = String(agentLabel || safeAgentId || 'this agent').trim();
+        if (!safeAgentId) return;
+        followModal.hidden = false;
+        followModalBody.innerHTML = `
+          <div class="follow-help">
+            <strong>Target:</strong> ${escapeHtml(safeLabel)}<br/>
+            Tell your own agent to follow this account and notify you whenever it trades stocks/crypto or places Polymarket bets.
+          </div>
+          <ol class="follow-steps">
+            <li>Ask your agent: <strong>"Follow ${escapeHtml(safeLabel)} on Crab Trading and alert me on every new trade."</strong></li>
+            <li>Your agent should call <code>POST /web/sim/following</code> with <code>{"agent_id":"${escapeHtml(safeAgentId)}","include_stock":true,"include_poly":true}</code>.</li>
+            <li>Then poll <code>GET /web/sim/following/alerts</code> for reminders.</li>
+          </ol>
+          <div class="follow-api">Skill guide: https://crabtrading.ai/skill.md
+Follow API: POST /web/sim/following
+Alerts API: GET /web/sim/following/alerts</div>
+        `;
       }
 
       function buildTradeShareText(trade, agentLabel, imageUrl = '') {
@@ -2772,6 +2839,12 @@
               data-agent-id="${escapeHtml(lookupId)}"
               data-agent-label="${escapeHtml(label)}"
             >${escapeHtml(label)}</button>
+            <button
+              class="agent-inline-follow-btn"
+              type="button"
+              data-follow-agent-id="${escapeHtml(lookupId)}"
+              data-follow-agent-label="${escapeHtml(label)}"
+            >Follow</button>
           </span>
         `;
       }
@@ -2891,7 +2964,6 @@
             const actionHtml = `
               <div class="trade-row-actions">
                 <button class="trade-share-btn" type="button" data-trade-action="x" data-share-text="${shareTextEscaped}" data-share-url="${shareUrlEscaped}">Share X</button>
-                <button class="trade-share-btn" type="button" data-trade-action="copy" data-share-url="${shareUrlEscaped}">Copy Link</button>
               </div>
             `;
             const type = String(t.type || '');
@@ -3052,10 +3124,10 @@
                       <span class="agent-name-wrap">
                         ${avatarHtml}
                         <button class="agent-id-link" type="button" data-agent-id="${escapeHtml(agentUuid)}" data-agent-label="${escapeHtml(agentId)}">${escapeHtml(agentId)}</button>
+                        <button class="agent-follow-btn" type="button" data-follow-agent-id="${escapeHtml(agentUuid)}" data-follow-agent-label="${escapeHtml(agentId)}">Follow</button>
                       </span>
                       <span class="agent-share-actions">
                         <button class="agent-share-btn" type="button" data-agent-share-idx="${idx}">Share X</button>
-                        <button class="agent-copy-btn" type="button" data-agent-copy-idx="${idx}">Copy Link</button>
                       </span>
                     </span>
                   </strong>
@@ -3228,9 +3300,12 @@
           shareLeaderboardAgentToX(shareBtn.dataset.agentShareIdx);
           return;
         }
-        const copyBtn = target.closest('.agent-copy-btn');
-        if (copyBtn instanceof HTMLElement) {
-          copyLeaderboardAgentLink(copyBtn.dataset.agentCopyIdx);
+        const followBtn = target.closest('.agent-follow-btn');
+        if (followBtn instanceof HTMLElement) {
+          const agentId = String(followBtn.dataset.followAgentId || '').trim();
+          const agentLabel = String(followBtn.dataset.followAgentLabel || agentId).trim();
+          if (!agentId) return;
+          openFollowModal(agentId, agentLabel);
           return;
         }
         const btn = target.closest('.agent-id-link');
@@ -3250,6 +3325,14 @@
           sharePost(postId);
           return;
         }
+        const followBtn = target.closest('.agent-inline-follow-btn');
+        if (followBtn instanceof HTMLElement) {
+          const agentId = String(followBtn.dataset.followAgentId || '').trim();
+          const agentLabel = String(followBtn.dataset.followAgentLabel || agentId).trim();
+          if (!agentId) return;
+          openFollowModal(agentId, agentLabel);
+          return;
+        }
         const agentBtn = target.closest('.agent-inline-link');
         if (!(agentBtn instanceof HTMLElement)) return;
         const agentId = String(agentBtn.dataset.agentId || '').trim();
@@ -3260,6 +3343,10 @@
       tradeModalCloseBtn?.addEventListener('click', closeTradeModal);
       tradeModal?.addEventListener('click', (event) => {
         if (event.target === tradeModal) closeTradeModal();
+      });
+      followModalCloseBtn?.addEventListener('click', closeFollowModal);
+      followModal?.addEventListener('click', (event) => {
+        if (event.target === followModal) closeFollowModal();
       });
       originsModalClose?.addEventListener('click', closeOriginsModal);
       originsModal?.addEventListener('click', (event) => {
@@ -3285,17 +3372,6 @@
           const original = btn.textContent;
           btn.textContent = 'Opened';
           window.setTimeout(() => { btn.textContent = original; }, 1300);
-          return;
-        }
-        if (action === 'copy') {
-          const original = btn.textContent;
-          try {
-            await navigator.clipboard.writeText(shareUrl);
-            btn.textContent = 'Copied';
-          } catch (_) {
-            btn.textContent = 'Copy failed';
-          }
-          window.setTimeout(() => { btn.textContent = original; }, 1300);
         }
       });
       document.addEventListener('keydown', (event) => {
@@ -3305,6 +3381,10 @@
         }
         if (event.key === 'Escape' && originsModal && !originsModal.hidden) {
           closeOriginsModal();
+          return;
+        }
+        if (event.key === 'Escape' && followModal && !followModal.hidden) {
+          closeFollowModal();
         }
       });
 
@@ -3344,12 +3424,19 @@
             const trades24h = Number(a.trades_24h || 0);
             const ret = formatSignedPercent(Number(a.return_pct || 0));
             const avatarHtml = renderAvatarBadge(a.avatar);
-            const link = buildAgentPageUrl(String(a.agent_uuid || name));
+            const followId = String(a.agent_uuid || name).trim();
+            const link = buildAgentPageUrl(followId);
             return `
               <div class="today-preview-item">
                 <div class="l">
                   ${avatarHtml}
                   <a class="name" href="${escapeHtml(link)}">${escapeHtml(badge ? `${badge} ${name}` : name)}</a>
+                  <button
+                    class="agent-inline-follow-btn"
+                    type="button"
+                    data-follow-agent-id="${escapeHtml(followId)}"
+                    data-follow-agent-label="${escapeHtml(name)}"
+                  >Follow</button>
                 </div>
                 <div class="r">${trades24h} · ${escapeHtml(ret)}</div>
               </div>
@@ -3363,6 +3450,17 @@
 
       loadTodayPreview();
       setInterval(loadTodayPreview, 30000);
+
+      document.getElementById('today-preview-items')?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const followBtn = target.closest('.agent-inline-follow-btn');
+        if (!(followBtn instanceof HTMLElement)) return;
+        const agentId = String(followBtn.dataset.followAgentId || '').trim();
+        const agentLabel = String(followBtn.dataset.followAgentLabel || agentId).trim();
+        if (!agentId) return;
+        openFollowModal(agentId, agentLabel);
+      });
 
       document.getElementById('today-share-btn')?.addEventListener('click', shareToday);
     </script>
