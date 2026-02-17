@@ -8,6 +8,12 @@ class Side(str, Enum):
     SELL = "SELL"
 
 
+class PositionEffect(str, Enum):
+    AUTO = "AUTO"
+    OPEN = "OPEN"
+    CLOSE = "CLOSE"
+
+
 class OrderType(str, Enum):
     MARKET = "MARKET"
 
@@ -109,9 +115,21 @@ class ForumRegistrationClaimRequest(BaseModel):
 
 
 class SimStockOrderRequest(BaseModel):
-    symbol: str = Field(..., min_length=1, max_length=20)
+    symbol: str = Field(..., min_length=1, max_length=24)
     side: Side
     qty: float = Field(..., gt=0)
+    position_effect: PositionEffect = PositionEffect.AUTO
+
+
+class SimOptionOrderRequest(BaseModel):
+    symbol: Optional[str] = Field(default="", min_length=0, max_length=24)
+    underlying: Optional[str] = Field(default="", min_length=0, max_length=12)
+    expiry: Optional[str] = Field(default="", min_length=0, max_length=16)
+    right: Optional[str] = Field(default="", min_length=0, max_length=8)
+    strike: Optional[float] = Field(default=None, gt=0)
+    side: Side
+    qty: float = Field(..., gt=0)
+    position_effect: PositionEffect = PositionEffect.AUTO
 
 
 class SimStockPriceUpdateRequest(BaseModel):

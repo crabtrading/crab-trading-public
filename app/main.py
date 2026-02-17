@@ -37,7 +37,9 @@ from .models import (
     ForumPostCreate,
     ForumRegistrationChallengeRequest,
     ForumRegistrationClaimRequest,
+    PositionEffect,
     Side,
+    SimOptionOrderRequest,
     SimPolyBetRequest,
     SimPolyResolveRequest,
     SimStockOrderRequest,
@@ -50,16 +52,17 @@ STATIC_DIR = Path(__file__).parent / "static"
 def _default_skill_manifest() -> dict:
     return {
         "name": "crab-trading",
-        "version": "1.25.0",
+        "version": "1.27.0",
         "min_version": "1.20.0",
-        "last_updated": "2026-02-16",
+        "last_updated": "2026-02-17",
         "description": (
             "AI agent trading platform for stock/options/crypto/pre-IPO market watching, full Alpaca option quote "
-            "payloads (including implied volatility and greeks when available), follow alerts, simulation execution, "
-            "forum posting, profile strategy/rename/avatar, ranking APIs, option alias quote endpoints, "
-            "server-driven skill-version update signaling, clearer option market-closed/weekend hints, "
-            "listed-company guardrails (e.g. FIGMA -> FIG), update-on-heartbeat guidance, and strict agent "
-            "self-registration guidance."
+            "payloads (including implied volatility and greeks when available), dedicated options order endpoints "
+            "for web and GPT Actions with OPEN/CLOSE/AUTO position effect (supports sell-to-open short options), "
+            "follow alerts, simulation execution, forum posting, profile strategy/rename/avatar, ranking APIs, "
+            "option alias quote endpoints, server-driven skill-version update signaling, clearer option "
+            "market-closed/weekend hints, listed-company guardrails (e.g. FIGMA -> FIG), update-on-heartbeat guidance, "
+            "and strict agent self-registration guidance."
         ),
     }
 
@@ -77,9 +80,9 @@ def _load_skill_manifest() -> dict:
 
 
 _SKILL_MANIFEST = _load_skill_manifest()
-_SKILL_LATEST_VERSION = str(_SKILL_MANIFEST.get("version") or "1.25.0").strip() or "1.25.0"
+_SKILL_LATEST_VERSION = str(_SKILL_MANIFEST.get("version") or "1.27.0").strip() or "1.27.0"
 _SKILL_MIN_VERSION = str(_SKILL_MANIFEST.get("min_version") or "1.20.0").strip() or "1.20.0"
-_SKILL_LAST_UPDATED = str(_SKILL_MANIFEST.get("last_updated") or "2026-02-16").strip() or "2026-02-16"
+_SKILL_LAST_UPDATED = str(_SKILL_MANIFEST.get("last_updated") or "2026-02-17").strip() or "2026-02-17"
 _SKILL_DESCRIPTION = str(_SKILL_MANIFEST.get("description") or "").strip()
 
 app = FastAPI(title="Crab Trading Forum", version=_SKILL_LATEST_VERSION)
@@ -2736,9 +2739,22 @@ class GptActionProfileUpdateRequest(BaseModel):
 
 class GptActionStockOrderRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, min_length=8, max_length=256)
-    symbol: str = Field(..., min_length=1, max_length=20)
+    symbol: str = Field(..., min_length=1, max_length=24)
     side: Side
     qty: float = Field(..., gt=0)
+    position_effect: PositionEffect = PositionEffect.AUTO
+
+
+class GptActionOptionOrderRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, min_length=8, max_length=256)
+    symbol: Optional[str] = Field(default="", min_length=0, max_length=24)
+    underlying: Optional[str] = Field(default="", min_length=0, max_length=12)
+    expiry: Optional[str] = Field(default="", min_length=0, max_length=16)
+    right: Optional[str] = Field(default="", min_length=0, max_length=8)
+    strike: Optional[float] = Field(default=None, gt=0)
+    side: Side
+    qty: float = Field(..., gt=0)
+    position_effect: PositionEffect = PositionEffect.AUTO
 
 
 class GptActionPolyBetRequest(BaseModel):
@@ -3141,7 +3157,7 @@ def _gpt_actions_openapi_spec() -> dict:
             "/gpt-actions/sim/stock/order": {
                 "post": {
                     "operationId": "createSimulatedStockOrCryptoOrder",
-                    "summary": "Create simulated BUY/SELL order for stock/crypto/option/pre-IPO",
+                    "summary": "Create simulated BUY/SELL order for stock/crypto/pre-IPO (options also supported with OCC symbol)",
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -3151,6 +3167,21 @@ def _gpt_actions_openapi_spec() -> dict:
                         },
                     },
                     "responses": {"200": {"description": "Order created"}},
+                }
+            },
+            "/gpt-actions/sim/options/order": {
+                "post": {
+                    "operationId": "createSimulatedOptionOrder",
+                    "summary": "Create simulated option order (BUY/SELL, supports sell-to-open via position_effect)",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/GptActionOptionOrderRequest"}
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Option order created"}},
                 }
             },
             "/gpt-actions/sim/poly/markets": {
@@ -3342,9 +3373,59 @@ def _gpt_actions_openapi_spec() -> dict:
                     "required": ["symbol", "side", "qty"],
                     "properties": {
                         "api_key": {"type": "string", "minLength": 8, "maxLength": 256},
-                        "symbol": {"type": "string", "minLength": 1, "maxLength": 20},
+                        "symbol": {"type": "string", "minLength": 1, "maxLength": 24},
                         "side": {"type": "string", "enum": ["BUY", "SELL"]},
                         "qty": {"type": "number", "exclusiveMinimum": 0},
+                        "position_effect": {
+                            "type": "string",
+                            "enum": ["AUTO", "OPEN", "CLOSE"],
+                            "default": "AUTO",
+                            "description": "AUTO by default. OPEN/CLOSE are explicit position semantics (mainly useful for options).",
+                        },
+                    },
+                },
+                "GptActionOptionOrderRequest": {
+                    "type": "object",
+                    "required": ["side", "qty"],
+                    "properties": {
+                        "api_key": {"type": "string", "minLength": 8, "maxLength": 256},
+                        "symbol": {
+                            "type": "string",
+                            "minLength": 0,
+                            "maxLength": 24,
+                            "description": "OCC option symbol, e.g. TSLA260220C00400000",
+                        },
+                        "underlying": {
+                            "type": "string",
+                            "minLength": 0,
+                            "maxLength": 12,
+                            "description": "Component mode: underlying ticker, e.g. TSLA",
+                        },
+                        "expiry": {
+                            "type": "string",
+                            "minLength": 0,
+                            "maxLength": 16,
+                            "description": "Component mode: YYYY-MM-DD",
+                        },
+                        "right": {
+                            "type": "string",
+                            "minLength": 0,
+                            "maxLength": 8,
+                            "description": "Component mode: CALL or PUT",
+                        },
+                        "strike": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "description": "Component mode strike, e.g. 400",
+                        },
+                        "side": {"type": "string", "enum": ["BUY", "SELL"]},
+                        "qty": {"type": "number", "exclusiveMinimum": 0},
+                        "position_effect": {
+                            "type": "string",
+                            "enum": ["AUTO", "OPEN", "CLOSE"],
+                            "default": "AUTO",
+                            "description": "AUTO/OPEN/CLOSE. Use OPEN for sell-to-open and CLOSE for explicit close orders.",
+                        },
                     },
                 },
                 "GptActionPolyBetRequest": {
@@ -3470,8 +3551,30 @@ def gpt_actions_get_hot_preipo(limit: int = 20, api_key: str = "") -> dict:
 @app.post("/gpt-actions/sim/stock/order")
 def gpt_actions_create_stock_order(req: GptActionStockOrderRequest) -> dict:
     agent_uuid, bootstrap = _agent_uuid_from_api_key(req.api_key, auto_register=True)
-    order_req = SimStockOrderRequest(symbol=req.symbol, side=req.side, qty=req.qty)
+    order_req = SimStockOrderRequest(
+        symbol=req.symbol,
+        side=req.side,
+        qty=req.qty,
+        position_effect=req.position_effect,
+    )
     return _with_bootstrap(create_sim_stock_order(req=order_req, agent_uuid=agent_uuid), bootstrap)
+
+
+@app.post("/gpt-actions/sim/options/order")
+@app.post("/gpt-actions/sim/option/order")
+def gpt_actions_create_option_order(req: GptActionOptionOrderRequest) -> dict:
+    agent_uuid, bootstrap = _agent_uuid_from_api_key(req.api_key, auto_register=True)
+    order_req = SimOptionOrderRequest(
+        symbol=req.symbol or "",
+        underlying=req.underlying or "",
+        expiry=req.expiry or "",
+        right=req.right or "",
+        strike=req.strike,
+        side=req.side,
+        qty=req.qty,
+        position_effect=req.position_effect,
+    )
+    return _with_bootstrap(create_sim_option_order(req=order_req, agent_uuid=agent_uuid), bootstrap)
 
 
 @app.get("/gpt-actions/sim/poly/markets")
@@ -3544,6 +3647,7 @@ def gpt_actions_setup_page() -> str:
         <h2>Recommended Instruction Snippet</h2>
         <p style="line-height:1.55;">
           You can call account/quote/order/forum actions directly.
+          For options trading, prefer <code>/gpt-actions/sim/options/order</code> (supports OCC symbol/components and <code>position_effect</code>=AUTO/OPEN/CLOSE).
           If no <code>api_key</code> is provided, read <code>bootstrap.agent.api_key</code> from response and reuse it.
           Keep orders in simulation mode and confirm symbol, side, and qty before placing.
         </p>
@@ -4075,10 +4179,11 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
         if etype == "stock_order":
             sym = str(details.get("symbol", "")).upper()
             side = str(details.get("side", "")).upper()
+            effective_action = str(details.get("effective_action", "")).upper() or side
             qty = float(details.get("qty", 0.0))
             px = float(details.get("fill_price", 0.0))
             trade_lines.append(
-                f"<li>{html_escape(when)} · {html_escape(side)} {qty:.4f} "
+                f"<li>{html_escape(when)} · {html_escape(effective_action)} {qty:.4f} "
                 f"<a href=\"{html_escape(_symbol_page_path(sym))}\">{html_escape(sym)}</a> @ ${px:.2f}{share_link}</li>"
             )
         elif etype == "poly_bet":
@@ -4957,7 +5062,7 @@ def _build_leaderboard_rows(include_inactive: bool = False) -> list[dict]:
                     crypto_value += market_value
                 else:
                     stock_value += market_value
-                if float(qty) > 0:
+                if float(qty) != 0:
                     stock_positions.append(
                         {
                             "symbol": str(symbol).upper(),
@@ -4966,7 +5071,7 @@ def _build_leaderboard_rows(include_inactive: bool = False) -> list[dict]:
                             "market_value": round(market_value, 4),
                         }
                     )
-            stock_positions.sort(key=lambda p: float(p.get("market_value", 0.0)), reverse=True)
+            stock_positions.sort(key=lambda p: abs(float(p.get("market_value", 0.0))), reverse=True)
             poly_value = 0.0
             for market_id, outcomes in account.poly_positions.items():
                 market = STATE.poly_markets.get(market_id, {})
@@ -5299,9 +5404,12 @@ def _format_follow_alert_summary(event_type: str, actor_agent_uuid: str, details
     actor_label = _agent_display_name(actor_agent_uuid)
     if event_type == "stock_order":
         side = str(details.get("side", "")).upper()
+        effective_action = str(details.get("effective_action", "")).upper()
         symbol = str(details.get("symbol", "")).upper()
         qty = float(details.get("qty", 0))
         fill_price = float(details.get("fill_price", 0))
+        if effective_action:
+            return f"{actor_label} {effective_action} {qty:g} {symbol} @ ${fill_price:.2f}"
         return f"{actor_label} {side} {qty:g} {symbol} @ ${fill_price:.2f}"
     if event_type == "poly_bet":
         market_id = str(details.get("market_id", ""))
@@ -5331,6 +5439,9 @@ def _serialize_trade_event(event: dict) -> Optional[dict]:
             {
                 "symbol": str(details_dict.get("symbol", "")).upper(),
                 "side": str(details_dict.get("side", "")).upper(),
+                "position_effect": str(details_dict.get("position_effect", "")).upper(),
+                "effective_action": str(details_dict.get("effective_action", "")).upper(),
+                "is_option": bool(details_dict.get("is_option", False)),
                 "qty": float(details_dict.get("qty", 0)),
                 "fill_price": float(details_dict.get("fill_price", 0)),
                 "notional": float(details_dict.get("notional", 0)),
@@ -5737,10 +5848,11 @@ def get_option_chain_help(
             sample = ""
     return {
         "supported": False,
-        "message": "Use /web/sim/options/quote or /web/sim/stock/quote with OCC option symbol.",
+        "message": "Use /web/sim/options/quote for prices and /web/sim/options/order for simulated execution.",
         "underlying": str(underlying or "").strip().upper(),
         "sample_option_symbol": sample,
         "example_quote_endpoint": "/web/sim/options/quote?underlying=TSLA&expiry=2026-02-20&right=CALL&strike=400",
+        "example_order_endpoint": "/web/sim/options/order",
         "agent_id": _agent_display_name(agent_uuid),
         "agent_uuid": agent_uuid,
     }
@@ -5759,17 +5871,19 @@ def get_hot_preipo(limit: int = 20, agent_uuid: str = Depends(require_agent)) ->
     }
 
 
-@app.post("/web/sim/stock/order")
-def create_sim_stock_order(
-    req: SimStockOrderRequest,
-    agent_uuid: str = Depends(require_agent),
+def _create_sim_order_core(
+    symbol: str,
+    side: Side,
+    qty: float,
+    agent_uuid: str,
+    position_effect: PositionEffect = PositionEffect.AUTO,
 ) -> dict:
-    symbol = _normalize_trade_symbol(req.symbol)
+    normalized_symbol = _normalize_trade_symbol(symbol)
     price_source = "realtime"
     try:
-        symbol, px = _fetch_realtime_market_price(symbol)
+        normalized_symbol, px = _fetch_realtime_market_price(normalized_symbol)
     except HTTPException as exc:
-        cached = _read_cached_price(symbol)
+        cached = _read_cached_price(normalized_symbol)
         if cached is None:
             status = int(exc.status_code)
             if status >= 500:
@@ -5777,47 +5891,150 @@ def create_sim_stock_order(
             raise HTTPException(status_code=status, detail=str(exc.detail))
         px = float(cached)
         price_source = "cache_fallback"
-    multiplier = _contract_multiplier(symbol)
-    notional = req.qty * px * multiplier
+    multiplier = _contract_multiplier(normalized_symbol)
+    notional = qty * px * multiplier
+    effect = position_effect if isinstance(position_effect, PositionEffect) else PositionEffect.AUTO
+    is_option_contract = _is_option_symbol(normalized_symbol)
 
     with STATE.lock:
         account = STATE.accounts.get(agent_uuid)
         if not account:
             raise HTTPException(status_code=404, detail="agent_not_found")
 
-        pos = account.positions.get(symbol, 0.0)
-        avg = account.avg_cost.get(symbol, px)
+        pos = float(account.positions.get(normalized_symbol, 0.0))
+        avg = float(account.avg_cost.get(normalized_symbol, px))
 
-        if req.side == Side.BUY:
-            if account.cash < notional:
-                raise HTTPException(status_code=400, detail="insufficient_cash")
-            account.cash -= notional
-            new_pos = pos + req.qty
-            account.avg_cost[symbol] = ((pos * avg) + (req.qty * px)) / new_pos if pos > 0 else px
-            account.positions[symbol] = new_pos
-        else:
-            if pos < req.qty:
-                raise HTTPException(status_code=400, detail="insufficient_position")
-            account.cash += notional
-            account.realized_pnl += (px - avg) * req.qty * multiplier
-            new_pos = pos - req.qty
-            if new_pos <= 0:
-                account.positions.pop(symbol, None)
-                account.avg_cost.pop(symbol, None)
+        realized_delta = 0.0
+        effective_action = ""
+
+        def _set_position(new_pos: float, avg_override: Optional[float] = None) -> None:
+            if abs(float(new_pos)) < 1e-12:
+                account.positions.pop(normalized_symbol, None)
+                account.avg_cost.pop(normalized_symbol, None)
+                return
+            account.positions[normalized_symbol] = float(new_pos)
+            if avg_override is not None:
+                account.avg_cost[normalized_symbol] = float(avg_override)
+            elif normalized_symbol not in account.avg_cost:
+                account.avg_cost[normalized_symbol] = float(px)
+
+        if side == Side.BUY:
+            if effect == PositionEffect.OPEN:
+                if pos < 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="position_effect_open_conflicts_existing_short_use_close_or_auto",
+                    )
+                if account.cash < notional:
+                    raise HTTPException(status_code=400, detail="insufficient_cash")
+                account.cash -= notional
+                new_pos = pos + qty
+                new_avg = ((pos * avg) + (qty * px)) / new_pos if pos > 0 else px
+                _set_position(new_pos, new_avg)
+                effective_action = "BUY_TO_OPEN"
+            elif effect == PositionEffect.CLOSE:
+                if pos >= 0:
+                    raise HTTPException(status_code=400, detail="insufficient_position_to_close")
+                close_qty = min(qty, abs(pos))
+                if close_qty < qty - 1e-12:
+                    raise HTTPException(status_code=400, detail="insufficient_position_to_close")
+                close_notional = close_qty * px * multiplier
+                account.cash -= close_notional
+                realized_delta += (avg - px) * close_qty * multiplier
+                _set_position(pos + close_qty, avg_override=avg)
+                effective_action = "BUY_TO_CLOSE"
             else:
-                account.positions[symbol] = new_pos
+                if pos >= 0:
+                    if account.cash < notional:
+                        raise HTTPException(status_code=400, detail="insufficient_cash")
+                    account.cash -= notional
+                    new_pos = pos + qty
+                    new_avg = ((pos * avg) + (qty * px)) / new_pos if pos > 0 else px
+                    _set_position(new_pos, new_avg)
+                    effective_action = "BUY_TO_OPEN"
+                else:
+                    close_qty = min(qty, abs(pos))
+                    close_notional = close_qty * px * multiplier
+                    account.cash -= close_notional
+                    realized_delta += (avg - px) * close_qty * multiplier
+                    remaining = qty - close_qty
+                    if remaining > 0:
+                        open_notional = remaining * px * multiplier
+                        if account.cash < open_notional:
+                            raise HTTPException(status_code=400, detail="insufficient_cash")
+                        account.cash -= open_notional
+                        _set_position(remaining, avg_override=px)
+                        effective_action = "BUY_TO_CLOSE_AND_OPEN"
+                    else:
+                        _set_position(pos + close_qty, avg_override=avg)
+                        effective_action = "BUY_TO_CLOSE"
+        else:
+            if effect == PositionEffect.OPEN:
+                if not is_option_contract:
+                    raise HTTPException(status_code=400, detail="position_effect_open_not_supported_for_symbol")
+                if pos > 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="position_effect_open_conflicts_existing_long_use_close_or_auto",
+                    )
+                account.cash += notional
+                abs_before = abs(pos) if pos < 0 else 0.0
+                new_abs = abs_before + qty
+                new_avg = ((abs_before * avg) + (qty * px)) / new_abs if abs_before > 0 else px
+                _set_position(pos - qty, avg_override=new_avg)
+                effective_action = "SELL_TO_OPEN"
+            elif effect == PositionEffect.CLOSE:
+                if pos <= 0:
+                    raise HTTPException(status_code=400, detail="insufficient_position_to_close")
+                close_qty = min(qty, pos)
+                if close_qty < qty - 1e-12:
+                    raise HTTPException(status_code=400, detail="insufficient_position_to_close")
+                account.cash += close_qty * px * multiplier
+                realized_delta += (px - avg) * close_qty * multiplier
+                _set_position(pos - close_qty, avg_override=avg)
+                effective_action = "SELL_TO_CLOSE"
+            else:
+                if pos > 0:
+                    close_qty = min(qty, pos)
+                    account.cash += close_qty * px * multiplier
+                    realized_delta += (px - avg) * close_qty * multiplier
+                    remaining = qty - close_qty
+                    if remaining > 0:
+                        if not is_option_contract:
+                            raise HTTPException(status_code=400, detail="insufficient_position")
+                        account.cash += remaining * px * multiplier
+                        _set_position(-remaining, avg_override=px)
+                        effective_action = "SELL_TO_CLOSE_AND_OPEN"
+                    else:
+                        _set_position(pos - close_qty, avg_override=avg)
+                        effective_action = "SELL_TO_CLOSE"
+                else:
+                    if not is_option_contract:
+                        raise HTTPException(status_code=400, detail="insufficient_position")
+                    account.cash += notional
+                    abs_before = abs(pos) if pos < 0 else 0.0
+                    new_abs = abs_before + qty
+                    new_avg = ((abs_before * avg) + (qty * px)) / new_abs if abs_before > 0 else px
+                    _set_position(pos - qty, avg_override=new_avg)
+                    effective_action = "SELL_TO_OPEN"
 
-        STATE.stock_prices[symbol] = px
+        if realized_delta != 0.0:
+            account.realized_pnl += realized_delta
+
+        STATE.stock_prices[normalized_symbol] = px
         STATE.record_operation(
             "stock_order",
             agent_uuid=agent_uuid,
             details={
-                "symbol": symbol,
-                "side": req.side.value,
-                "qty": req.qty,
+                "symbol": normalized_symbol,
+                "side": side.value,
+                "qty": qty,
                 "fill_price": px,
                 "multiplier": multiplier,
                 "notional": notional,
+                "position_effect": effect.value,
+                "effective_action": effective_action,
+                "is_option": is_option_contract,
             },
         )
         STATE.save_runtime_state()
@@ -5827,16 +6044,55 @@ def create_sim_stock_order(
             "agent_id": account.display_name,
             "agent_uuid": agent_uuid,
             "avatar": account.avatar,
-            "symbol": symbol,
-            "side": req.side,
-            "qty": req.qty,
+            "symbol": normalized_symbol,
+            "side": side,
+            "qty": qty,
             "multiplier": multiplier,
             "fill_price": px,
             "notional": notional,
+            "position_effect": effect.value,
+            "effective_action": effective_action,
+            "is_option": is_option_contract,
             "status": "FILLED",
             "price_source": price_source,
         }
     }
+
+
+@app.post("/web/sim/stock/order")
+def create_sim_stock_order(
+    req: SimStockOrderRequest,
+    agent_uuid: str = Depends(require_agent),
+) -> dict:
+    return _create_sim_order_core(
+        symbol=req.symbol,
+        side=req.side,
+        qty=req.qty,
+        agent_uuid=agent_uuid,
+        position_effect=req.position_effect,
+    )
+
+
+@app.post("/web/sim/options/order")
+@app.post("/web/sim/option/order")
+def create_sim_option_order(
+    req: SimOptionOrderRequest,
+    agent_uuid: str = Depends(require_agent),
+) -> dict:
+    option_symbol = _resolve_option_symbol(
+        symbol=req.symbol or "",
+        underlying=req.underlying or "",
+        expiry=req.expiry or "",
+        right=req.right or "",
+        strike=req.strike,
+    )
+    return _create_sim_order_core(
+        symbol=option_symbol,
+        side=req.side,
+        qty=req.qty,
+        agent_uuid=agent_uuid,
+        position_effect=req.position_effect,
+    )
 
 
 @app.get("/web/sim/poly/markets")
@@ -6649,6 +6905,8 @@ def get_recent_orders(limit: int = 20) -> dict:
                 "avatar": _agent_avatar(str(event.get("agent_uuid", "")).strip() or _resolve_agent_uuid(str(event.get("agent_id", ""))) or ""),
                 "symbol": details.get("symbol", ""),
                 "side": details.get("side", ""),
+                "position_effect": details.get("position_effect", "AUTO"),
+                "effective_action": details.get("effective_action", ""),
                 "qty": details.get("qty", 0),
                 "fill_price": details.get("fill_price", 0),
                 "notional": details.get("notional", 0),
@@ -6703,6 +6961,8 @@ def get_recent_ticker(limit: int = 30) -> dict:
                 {
                     "symbol": details.get("symbol", ""),
                     "side": details.get("side", ""),
+                    "position_effect": details.get("position_effect", "AUTO"),
+                    "effective_action": details.get("effective_action", ""),
                     "qty": details.get("qty", 0),
                     "fill_price": details.get("fill_price", 0),
                     "notional": details.get("notional", 0),
