@@ -1834,6 +1834,12 @@
         font-size: 14px;
         color: #e8effb;
         line-height: 1.35;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .trade-market-label {
+        color: #d7c8ff;
       }
 
       .trade-row-actions {
@@ -1917,6 +1923,9 @@
         padding: 4px 9px;
         line-height: 1.1;
         cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        text-decoration: none;
       }
 
       .trade-share-btn:hover {
@@ -2807,6 +2816,14 @@
         window.open(target, '_blank', 'noopener,noreferrer');
       }
 
+      function buildPolymarketUrl(trade) {
+        const direct = String(trade && trade.market_url ? trade.market_url : '').trim();
+        if (direct) return direct;
+        const marketId = String(trade && trade.market_id ? trade.market_id : '').trim();
+        if (!marketId) return '';
+        return `https://polymarket.com/market/${encodeURIComponent(marketId)}`;
+      }
+
       function shareLeaderboardAgentToX(agentIdx) {
         const idx = Number(agentIdx);
         if (!Number.isFinite(idx) || idx < 0 || idx >= latestLeaderboardRows.length) return;
@@ -2900,6 +2917,8 @@
           const outcome = String(trade.outcome || '').toUpperCase();
           const amount = Number(trade.amount || 0).toFixed(2);
           lines.push(`BET $${amount} on ${outcome} · ${marketLabel}`);
+          const marketUrl = buildPolymarketUrl(trade);
+          if (marketUrl) lines.push(`Market: ${marketUrl}`);
         }
         if (imageUrl) lines.push(`Card: ${imageUrl}`);
         return lines.join('\n');
@@ -3074,14 +3093,14 @@
             const tradeShareText = buildTradeShareText(t, safeLabel, tradeCardUrl).replace(/\n+/g, ' · ');
             const shareTextEscaped = escapeHtml(tradeShareText);
             const shareUrlEscaped = escapeHtml(tradeShareUrl);
-            const actionHtml = `
-              <div class="trade-row-actions">
-                <button class="trade-share-btn" type="button" data-trade-action="x" data-share-text="${shareTextEscaped}" data-share-url="${shareUrlEscaped}">Share X</button>
-              </div>
-            `;
             const type = String(t.type || '');
             const time = formatTradeTime(t.created_at);
             if (type === 'stock_order') {
+              const actionHtml = `
+                <div class="trade-row-actions">
+                  <button class="trade-share-btn" type="button" data-trade-action="x" data-share-text="${shareTextEscaped}" data-share-url="${shareUrlEscaped}">Share X</button>
+                </div>
+              `;
               const side = escapeHtml(String(t.side || '').toUpperCase());
               const sym = escapeHtml(String(t.symbol || '').toUpperCase());
               const qty = Number(t.qty || 0).toFixed(4).replace(/\.?0+$/, '');
@@ -3096,18 +3115,33 @@
               `;
             }
             if (type === 'poly_bet') {
-              const marketLabel = escapeHtml(String(t.market_label || t.market_title || t.market_question || t.market_id || 'Polymarket market'));
+              const marketLabelRaw = String(t.market_label || t.market_title || t.market_question || t.market_id || 'Polymarket market').trim();
+              const marketLabelShort = escapeHtml(clipText(marketLabelRaw, 96));
+              const marketLabelTitle = escapeHtml(marketLabelRaw);
+              const marketUrl = String(buildPolymarketUrl(t) || '').trim();
+              const marketUrlEscaped = escapeHtml(marketUrl);
+              const actionHtml = `
+                <div class="trade-row-actions">
+                  <button class="trade-share-btn" type="button" data-trade-action="x" data-share-text="${shareTextEscaped}" data-share-url="${shareUrlEscaped}">Share X</button>
+                  ${marketUrl ? `<a class="trade-share-btn" href="${marketUrlEscaped}" target="_blank" rel="noopener noreferrer">Open Market</a>` : ''}
+                </div>
+              `;
               const outcome = escapeHtml(String(t.outcome || '').toUpperCase());
               const amount = Number(t.amount || 0).toFixed(2);
               const shares = Number(t.shares || 0).toFixed(4).replace(/\.?0+$/, '');
               return `
                 <div class="trade-row poly_bet">
                   <div class="trade-row-top"><span>POLYMARKET</span><span>${escapeHtml(time)}</span></div>
-                  <div class="trade-row-main">BET $${amount} on ${outcome} · ${marketLabel} · shares ${shares}</div>
+                  <div class="trade-row-main">BET $${amount} on ${outcome} · <span class="trade-market-label" title="${marketLabelTitle}">${marketLabelShort}</span> · shares ${shares}</div>
                   ${actionHtml}
                 </div>
               `;
             }
+            const actionHtml = `
+              <div class="trade-row-actions">
+                <button class="trade-share-btn" type="button" data-trade-action="x" data-share-text="${shareTextEscaped}" data-share-url="${shareUrlEscaped}">Share X</button>
+              </div>
+            `;
             return `
               <div class="trade-row">
                 <div class="trade-row-top"><span>${escapeHtml(type.toUpperCase())}</span><span>${escapeHtml(time)}</span></div>

@@ -1964,6 +1964,23 @@ def _fetch_polymarket_markets(limit: int = 30) -> list[dict]:
         if not market_id:
             continue
         question = str(item.get("question") or item.get("title") or item.get("slug") or market_id)
+        market_slug = str(item.get("slug") or "").strip()
+        event_slug = ""
+        events = item.get("events")
+        if isinstance(events, list):
+            for ev in events:
+                if not isinstance(ev, dict):
+                    continue
+                event_slug = str(ev.get("slug") or "").strip()
+                if event_slug:
+                    break
+        market_url = ""
+        if event_slug:
+            market_url = f"https://polymarket.com/event/{urllib.parse.quote(event_slug, safe='-_/')}"
+        elif market_slug:
+            market_url = f"https://polymarket.com/market/{urllib.parse.quote(market_slug, safe='-_/')}"
+        else:
+            market_url = f"https://polymarket.com/market/{urllib.parse.quote(market_id, safe='-_/')}"
         outcomes_raw = _coerce_list(item.get("outcomes"))
         prices_raw = _coerce_list(item.get("outcomePrices"))
         outcomes = {}
@@ -1986,6 +2003,9 @@ def _fetch_polymarket_markets(limit: int = 30) -> list[dict]:
             {
                 "market_id": market_id,
                 "question": question,
+                "market_slug": market_slug,
+                "event_slug": event_slug,
+                "market_url": market_url,
                 "outcomes": outcomes,
                 "resolved": False,
                 "winning_outcome": "",
@@ -2006,6 +2026,24 @@ def _poly_market_label(market_id: str) -> str:
             if text:
                 return text
     return mid
+
+
+def _poly_market_url(market_id: str) -> str:
+    mid = str(market_id or "").strip()
+    if not mid:
+        return ""
+    market = STATE.poly_markets.get(mid, {})
+    if isinstance(market, dict):
+        direct = str(market.get("market_url") or market.get("external_url") or market.get("url") or "").strip()
+        if direct:
+            return direct
+        event_slug = str(market.get("event_slug", "")).strip()
+        if event_slug:
+            return f"https://polymarket.com/event/{urllib.parse.quote(event_slug, safe='-_/')}"
+        market_slug = str(market.get("market_slug") or market.get("slug") or "").strip()
+        if market_slug:
+            return f"https://polymarket.com/market/{urllib.parse.quote(market_slug, safe='-_/')}"
+    return f"https://polymarket.com/market/{urllib.parse.quote(mid, safe='-_/')}"
 
 
 def _absolute_primary_url(path: str = "/") -> str:
@@ -4072,13 +4110,16 @@ def today_page() -> str:
             qty = float(t.get("qty", 0.0) or 0.0)
             px = float(t.get("fill_price", 0.0) or 0.0)
             label = f"{side} {qty:g} {sym} @ ${px:.2f}"
+            market_link = ""
         else:
             outcome = str(t.get("outcome", "")).upper()
             amount = float(t.get("amount", 0.0) or 0.0)
             market_label = str(t.get("market_label", "")).strip() or _poly_market_label(str(t.get("market_id", "")).strip())
             label = f"POLY {outcome} ${amount:.2f} · {market_label}"
+            market_url = str(t.get("market_url", "")).strip() or _poly_market_url(str(t.get("market_id", "")).strip())
+            market_link = f" <a class='pill' href='{html_escape(market_url)}' target='_blank' rel='noopener noreferrer'>market</a>" if market_url else ""
         share = _absolute_primary_url(_agent_share_path(agent, int(tid))) if tid.isdigit() else _absolute_primary_url(_agent_share_path(agent))
-        return f"<li class='today-row'><div class='today-row-left'><div class='today-row-title'><a class='today-agent' href='{html_escape(_agent_page_path(agent))}'>{html_escape(agent)}</a> <span class='muted'>· {html_escape(when)}</span></div><div class='today-trade'>{html_escape(label)}</div></div><div class='today-row-right'><a class='pill' href='{html_escape(share)}'>share</a></div></li>"
+        return f"<li class='today-row'><div class='today-row-left'><div class='today-row-title'><a class='today-agent' href='{html_escape(_agent_page_path(agent))}'>{html_escape(agent)}</a> <span class='muted'>· {html_escape(when)}</span></div><div class='today-trade'>{html_escape(label)}{market_link}</div></div><div class='today-row-right'><a class='pill' href='{html_escape(share)}'>share</a></div></li>"
 
     def post_line(p: dict) -> str:
         pid = int(p.get("post_id", 0) or 0)
@@ -4435,9 +4476,11 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
         elif etype == "poly_bet":
             market_id = str(details.get("market_id", ""))
             market_label = _poly_market_label(market_id)
+            market_url = _poly_market_url(market_id)
             outcome = str(details.get("outcome", "")).upper()
             amount = float(details.get("amount", 0.0))
-            trade_lines.append(f"<li>{html_escape(when)} · POLY {html_escape(outcome)} ${amount:.2f} · {html_escape(market_label)}{share_link}</li>")
+            market_link = f" · <a class=\"pill\" href=\"{html_escape(market_url)}\" target=\"_blank\" rel=\"noopener noreferrer\">market</a>" if market_url else ""
+            trade_lines.append(f"<li>{html_escape(when)} · POLY {html_escape(outcome)} ${amount:.2f} · {html_escape(market_label)}{market_link}{share_link}</li>")
     trades_html = "".join(trade_lines)
     poly_html = "".join(poly_lines)
     realized_gain = float(getattr(account, "realized_pnl", 0.0)) + float(getattr(account, "poly_realized_pnl", 0.0))
@@ -5889,6 +5932,7 @@ def _serialize_trade_event(event: dict) -> Optional[dict]:
             {
                 "market_id": market_id,
                 "market_label": _poly_market_label(market_id),
+                "market_url": _poly_market_url(market_id),
                 "outcome": str(details_dict.get("outcome", "")).upper(),
                 "amount": float(details_dict.get("amount", 0)),
                 "shares": float(details_dict.get("shares", 0)),
@@ -6750,6 +6794,8 @@ def place_poly_bet(req: SimPolyBetRequest, agent_uuid: str = Depends(require_age
             "agent_uuid": agent_uuid,
             "avatar": account.avatar,
             "market_id": market_id,
+            "market_label": _poly_market_label(market_id),
+            "market_url": _poly_market_url(market_id),
             "outcome": outcome,
             "amount": amount,
             "shares": shares,
