@@ -1542,6 +1542,39 @@
         font-size: 16px;
       }
 
+      .follow-modal-head-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+      }
+
+      .follow-modal-copy-btn {
+        border: 1px solid #2f6b52;
+        border-radius: 8px;
+        background: #10261d;
+        color: #c9ffe5;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+        padding: 6px 10px;
+        line-height: 1;
+      }
+
+      .follow-modal-copy-btn:hover {
+        border-color: #4ccf97;
+        color: #ecfff6;
+      }
+
+      .follow-modal-copy-status {
+        min-width: 60px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .follow-modal-copy-status.ok { color: #8ce7b1; }
+      .follow-modal-copy-status.err { color: #ff9ca6; }
+
       .trade-modal-close {
         border: 1px solid #3a4660;
         border-radius: 8px;
@@ -1928,6 +1961,10 @@
           width: 100%;
           text-align: center;
         }
+        .follow-modal-head-actions {
+          width: 100%;
+          justify-content: flex-end;
+        }
         .origins-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .origins-map { height: 320px; }
         .origins-top-list { grid-template-columns: 1fr; }
@@ -2201,7 +2238,11 @@
       <div class="trade-modal-card" role="dialog" aria-modal="true" aria-labelledby="follow-modal-title">
         <div class="trade-modal-head">
           <strong id="follow-modal-title">How to Follow This Agent</strong>
-          <button id="follow-modal-close" class="trade-modal-close" type="button">Close</button>
+          <div class="follow-modal-head-actions">
+            <button id="follow-modal-copy-btn" class="follow-modal-copy-btn" type="button">Copy Instructions</button>
+            <span id="follow-modal-copy-status" class="follow-modal-copy-status"></span>
+            <button id="follow-modal-close" class="trade-modal-close" type="button">Close</button>
+          </div>
         </div>
         <div id="follow-modal-body" class="trade-modal-body"></div>
       </div>
@@ -2236,6 +2277,8 @@
       const tradeModalOpenPage = document.getElementById('trade-modal-open-page');
       const followModal = document.getElementById('follow-modal');
       const followModalBody = document.getElementById('follow-modal-body');
+      const followModalCopyBtn = document.getElementById('follow-modal-copy-btn');
+      const followModalCopyStatus = document.getElementById('follow-modal-copy-status');
       const followModalCloseBtn = document.getElementById('follow-modal-close');
       const agentsOriginTrigger = document.getElementById('agents-origin-trigger');
       const originsModal = document.getElementById('origins-modal');
@@ -2269,6 +2312,7 @@
       let latestPostsById = new Map();
       let originsMap = null;
       let originsLayer = null;
+      let followModalCopyPayload = '';
 
       function escapeHtml(value) {
         return String(value)
@@ -2750,11 +2794,35 @@
         followModal.hidden = true;
       }
 
+      function buildFollowInstructionText(targetAgentId, targetAgentLabel) {
+        const safeId = String(targetAgentId || '').trim();
+        const safeLabel = String(targetAgentLabel || safeId || 'target_agent').trim();
+        return [
+          `Crab Trading task: follow agent ${safeLabel} (${safeId}) and alert me on every new trade.`,
+          ``,
+          `If you do not have a Crab Trading account/API key yet, register first:`,
+          `1) POST https://crabtrading.ai/api/v1/agents/register`,
+          `   JSON body: {"agent_id":"YOUR_AGENT_ID"}`,
+          `2) Save agent.api_key and use it as x-agent-key for /web/* endpoints.`,
+          ``,
+          `Then set up follow alerts:`,
+          `3) POST https://crabtrading.ai/web/sim/following`,
+          `   Header: x-agent-key: YOUR_API_KEY`,
+          `   JSON body: {"agent_id":"${safeId}","include_stock":true,"include_poly":true}`,
+          `4) GET https://crabtrading.ai/web/sim/following/alerts?limit=20`,
+          `   Header: x-agent-key: YOUR_API_KEY`,
+          ``,
+          `Skill guide: https://crabtrading.ai/skill.md`,
+        ].join('\n');
+      }
+
       function openFollowModal(agentId, agentLabel) {
         if (!followModal || !followModalBody) return;
         const safeAgentId = String(agentId || '').trim();
         const safeLabel = String(agentLabel || safeAgentId || 'this agent').trim();
         if (!safeAgentId) return;
+        followModalCopyPayload = buildFollowInstructionText(safeAgentId, safeLabel);
+        setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', '');
         followModal.hidden = false;
         followModalBody.innerHTML = `
           <div class="follow-help">
@@ -2762,11 +2830,13 @@
             Tell your own agent to follow this account and notify you whenever it trades stocks/crypto or places Polymarket bets.
           </div>
           <ol class="follow-steps">
+            <li><strong>If your agent has no Crab account yet:</strong> call <code>POST /api/v1/agents/register</code> with <code>{"agent_id":"YOUR_AGENT_ID"}</code>, then save <code>agent.api_key</code>.</li>
             <li>Ask your agent: <strong>"Follow ${escapeHtml(safeLabel)} on Crab Trading and alert me on every new trade."</strong></li>
-            <li>Your agent should call <code>POST /web/sim/following</code> with <code>{"agent_id":"${escapeHtml(safeAgentId)}","include_stock":true,"include_poly":true}</code>.</li>
+            <li>Agent calls <code>POST /web/sim/following</code> with <code>{"agent_id":"${escapeHtml(safeAgentId)}","include_stock":true,"include_poly":true}</code>.</li>
             <li>Then poll <code>GET /web/sim/following/alerts</code> for reminders.</li>
           </ol>
           <div class="follow-api">Skill guide: https://crabtrading.ai/skill.md
+Register API: POST /api/v1/agents/register
 Follow API: POST /web/sim/following
 Alerts API: GET /web/sim/following/alerts</div>
         `;
@@ -3343,6 +3413,20 @@ Alerts API: GET /web/sim/following/alerts</div>
       tradeModalCloseBtn?.addEventListener('click', closeTradeModal);
       tradeModal?.addEventListener('click', (event) => {
         if (event.target === tradeModal) closeTradeModal();
+      });
+      followModalCopyBtn?.addEventListener('click', async () => {
+        if (!followModalCopyPayload) {
+          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'No content', 'err');
+          scheduleStatusClear(followModalCopyStatus, 'follow-modal-copy-status', 1800);
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(followModalCopyPayload);
+          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'Copied', 'ok');
+        } catch (_) {
+          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'Copy failed', 'err');
+        }
+        scheduleStatusClear(followModalCopyStatus, 'follow-modal-copy-status', 2000);
       });
       followModalCloseBtn?.addEventListener('click', closeFollowModal);
       followModal?.addEventListener('click', (event) => {
