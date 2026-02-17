@@ -94,6 +94,13 @@ class ForumRegistrationChallengeRequest(BaseModel):
 
 class FollowAgentRequest(BaseModel):
     agent_id: str = Field(..., min_length=3, max_length=64)
+    include_stock: bool = True
+    include_poly: bool = True
+    symbols: Optional[list[str]] = None
+    min_notional: Optional[float] = Field(default=None, ge=0)
+    min_amount: Optional[float] = Field(default=None, ge=0)
+    only_opening: bool = False
+    muted: bool = False
 
 
 class AgentRegisterRequest(BaseModel):

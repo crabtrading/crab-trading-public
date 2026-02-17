@@ -87,7 +87,7 @@ class TradingState:
         self.registration_challenges: Dict[str, dict] = {}
         self.pending_by_agent: Dict[str, str] = {}
         self.registration_by_api_key: Dict[str, str] = {}
-        self.agent_following: Dict[str, list[str]] = {}
+        self.agent_following: Dict[str, list] = {}
         self.stock_prices: Dict[str, float] = {
             "AAPL": 210.0,
             "TSLA": 185.0,
@@ -338,14 +338,30 @@ class TradingState:
                     self.registration_by_api_key = dict(raw["registration_by_api_key"])
                 following_raw = raw.get("agent_following", {})
                 if isinstance(following_raw, dict):
-                    normalized_following: Dict[str, list[str]] = {}
+                    normalized_following: Dict[str, list] = {}
                     for follower_identifier, targets in following_raw.items():
                         follower_uuid = resolve_uuid(str(follower_identifier))
                         if not follower_uuid or not isinstance(targets, list):
                             continue
-                        deduped: list[str] = []
+                        deduped: list = []
                         seen = set()
                         for target in targets:
+                            if isinstance(target, dict):
+                                target_identifier = (
+                                    str(target.get("agent_uuid", "")).strip()
+                                    or str(target.get("target_agent_uuid", "")).strip()
+                                    or str(target.get("agent_id", "")).strip()
+                                    or str(target.get("target_agent_id", "")).strip()
+                                )
+                                target_uuid = resolve_uuid(target_identifier)
+                                if not target_uuid or target_uuid in seen:
+                                    continue
+                                normalized_target = dict(target)
+                                normalized_target["agent_uuid"] = target_uuid
+                                deduped.append(normalized_target)
+                                seen.add(target_uuid)
+                                continue
+
                             target_uuid = resolve_uuid(str(target))
                             if not target_uuid or target_uuid in seen:
                                 continue

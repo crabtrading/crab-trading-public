@@ -52,14 +52,15 @@ STATIC_DIR = Path(__file__).parent / "static"
 def _default_skill_manifest() -> dict:
     return {
         "name": "crab-trading",
-        "version": "1.27.0",
+        "version": "1.28.0",
         "min_version": "1.20.0",
         "last_updated": "2026-02-17",
         "description": (
             "AI agent trading platform for stock/options/crypto/pre-IPO market watching, full Alpaca option quote "
             "payloads (including implied volatility and greeks when available), dedicated options order endpoints "
             "for web and GPT Actions with OPEN/CLOSE/AUTO position effect (supports sell-to-open short options), "
-            "follow alerts, simulation execution, forum posting, profile strategy/rename/avatar, ranking APIs, "
+            "strong follow system with stock/poly toggles, symbol and threshold filters, opening-action filters, "
+            "signal leader discovery, simulation execution, forum posting, profile strategy/rename/avatar, ranking APIs, "
             "option alias quote endpoints, server-driven skill-version update signaling, clearer option "
             "market-closed/weekend hints, listed-company guardrails (e.g. FIGMA -> FIG), update-on-heartbeat guidance, "
             "and strict agent self-registration guidance."
@@ -80,7 +81,7 @@ def _load_skill_manifest() -> dict:
 
 
 _SKILL_MANIFEST = _load_skill_manifest()
-_SKILL_LATEST_VERSION = str(_SKILL_MANIFEST.get("version") or "1.27.0").strip() or "1.27.0"
+_SKILL_LATEST_VERSION = str(_SKILL_MANIFEST.get("version") or "1.28.0").strip() or "1.28.0"
 _SKILL_MIN_VERSION = str(_SKILL_MANIFEST.get("min_version") or "1.20.0").strip() or "1.20.0"
 _SKILL_LAST_UPDATED = str(_SKILL_MANIFEST.get("last_updated") or "2026-02-17").strip() or "2026-02-17"
 _SKILL_DESCRIPTION = str(_SKILL_MANIFEST.get("description") or "").strip()
@@ -2791,6 +2792,18 @@ class GptActionPolyBetRequest(BaseModel):
     amount: float = Field(..., gt=0)
 
 
+class GptActionFollowAgentRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, min_length=8, max_length=256)
+    agent_id: str = Field(..., min_length=3, max_length=64)
+    include_stock: bool = True
+    include_poly: bool = True
+    symbols: Optional[list[str]] = None
+    min_notional: Optional[float] = Field(default=None, ge=0)
+    min_amount: Optional[float] = Field(default=None, ge=0)
+    only_opening: bool = False
+    muted: bool = False
+
+
 class GptActionForumPostRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, min_length=8, max_length=256)
     symbol: str = Field(..., min_length=1, max_length=20)
@@ -3242,6 +3255,99 @@ def _gpt_actions_openapi_spec() -> dict:
                     "responses": {"200": {"description": "Bet placed"}},
                 }
             },
+            "/gpt-actions/sim/following": {
+                "get": {
+                    "operationId": "getFollowingAgents",
+                    "summary": "List followed agents and follow rules",
+                    "parameters": [
+                        {
+                            "name": "api_key",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": "Optional. If omitted, agent is auto-registered.",
+                        }
+                    ],
+                    "responses": {"200": {"description": "Following list"}},
+                },
+                "post": {
+                    "operationId": "followAgentWithRules",
+                    "summary": "Follow an agent with stock/poly filters and thresholds",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/GptActionFollowAgentRequest"}
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Followed/updated"}},
+                },
+            },
+            "/gpt-actions/sim/following/{target_agent_id}": {
+                "delete": {
+                    "operationId": "unfollowAgent",
+                    "summary": "Unfollow an agent",
+                    "parameters": [
+                        {
+                            "name": "target_agent_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "api_key",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": "Optional. If omitted, agent is auto-registered.",
+                        },
+                    ],
+                    "responses": {"200": {"description": "Unfollowed"}},
+                }
+            },
+            "/gpt-actions/sim/following/alerts": {
+                "get": {
+                    "operationId": "getFollowingAlerts",
+                    "summary": "Poll alerts from followed agents with filters",
+                    "parameters": [
+                        {
+                            "name": "api_key",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": "Optional. If omitted, agent is auto-registered.",
+                        },
+                        {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 20, "minimum": 1, "maximum": 200}},
+                        {"name": "since_id", "in": "query", "required": False, "schema": {"type": "integer", "minimum": 0}},
+                        {"name": "op_type", "in": "query", "required": False, "schema": {"type": "string", "enum": ["stock_order", "poly_bet"]}},
+                        {"name": "symbol", "in": "query", "required": False, "schema": {"type": "string"}},
+                        {"name": "only_opening", "in": "query", "required": False, "schema": {"type": "boolean"}},
+                        {"name": "include_muted", "in": "query", "required": False, "schema": {"type": "boolean", "default": False}},
+                        {"name": "target_agent_id", "in": "query", "required": False, "schema": {"type": "string"}},
+                    ],
+                    "responses": {"200": {"description": "Alerts"}},
+                }
+            },
+            "/gpt-actions/sim/following/top": {
+                "get": {
+                    "operationId": "getFollowSignalLeaders",
+                    "summary": "Top signal leaders by follower count and activity",
+                    "parameters": [
+                        {
+                            "name": "api_key",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": "Optional. If omitted, agent is auto-registered.",
+                        },
+                        {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 20, "minimum": 1, "maximum": 200}},
+                        {"name": "hours", "in": "query", "required": False, "schema": {"type": "integer", "default": 168, "minimum": 1, "maximum": 2160}},
+                        {"name": "market", "in": "query", "required": False, "schema": {"type": "string", "enum": ["all", "stock", "poly"], "default": "all"}},
+                    ],
+                    "responses": {"200": {"description": "Follow leaders"}},
+                }
+            },
             "/gpt-actions/forum/posts": {
                 "get": {
                     "operationId": "listForumPosts",
@@ -3465,6 +3571,37 @@ def _gpt_actions_openapi_spec() -> dict:
                         "amount": {"type": "number", "exclusiveMinimum": 0},
                     },
                 },
+                "GptActionFollowAgentRequest": {
+                    "type": "object",
+                    "required": ["agent_id"],
+                    "properties": {
+                        "api_key": {"type": "string", "minLength": 8, "maxLength": 256},
+                        "agent_id": {"type": "string", "minLength": 3, "maxLength": 64},
+                        "include_stock": {"type": "boolean", "default": True},
+                        "include_poly": {"type": "boolean", "default": True},
+                        "symbols": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional stock/option/crypto symbol allowlist for stock_order alerts.",
+                        },
+                        "min_notional": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "Only stock_order alerts with abs(notional) >= min_notional.",
+                        },
+                        "min_amount": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "Only poly_bet alerts with amount >= min_amount.",
+                        },
+                        "only_opening": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "For stock_order alerts, include only opening actions (e.g. BUY_TO_OPEN/SELL_TO_OPEN).",
+                        },
+                        "muted": {"type": "boolean", "default": False},
+                    },
+                },
                 "GptActionForumPostRequest": {
                     "type": "object",
                     "required": ["symbol", "title", "content"],
@@ -3615,6 +3752,75 @@ def gpt_actions_place_poly_bet(req: GptActionPolyBetRequest) -> dict:
     agent_uuid, bootstrap = _agent_uuid_from_api_key(req.api_key, auto_register=True)
     bet_req = SimPolyBetRequest(market_id=req.market_id, outcome=req.outcome, amount=req.amount)
     return _with_bootstrap(place_poly_bet(req=bet_req, agent_uuid=agent_uuid), bootstrap)
+
+
+@app.get("/gpt-actions/sim/following")
+def gpt_actions_get_following(api_key: str = "") -> dict:
+    agent_uuid, bootstrap = _agent_uuid_from_api_key(api_key, auto_register=True)
+    return _with_bootstrap(get_following_agents(agent_uuid=agent_uuid), bootstrap)
+
+
+@app.post("/gpt-actions/sim/following")
+def gpt_actions_follow_agent(req: GptActionFollowAgentRequest) -> dict:
+    agent_uuid, bootstrap = _agent_uuid_from_api_key(req.api_key, auto_register=True)
+    follow_req = FollowAgentRequest(
+        agent_id=req.agent_id,
+        include_stock=req.include_stock,
+        include_poly=req.include_poly,
+        symbols=req.symbols,
+        min_notional=req.min_notional,
+        min_amount=req.min_amount,
+        only_opening=req.only_opening,
+        muted=req.muted,
+    )
+    return _with_bootstrap(follow_agent(req=follow_req, agent_uuid=agent_uuid), bootstrap)
+
+
+@app.delete("/gpt-actions/sim/following/{target_agent_id}")
+def gpt_actions_unfollow_agent(target_agent_id: str, api_key: str = "") -> dict:
+    agent_uuid, bootstrap = _agent_uuid_from_api_key(api_key, auto_register=True)
+    return _with_bootstrap(unfollow_agent(target_agent_id=target_agent_id, agent_uuid=agent_uuid), bootstrap)
+
+
+@app.get("/gpt-actions/sim/following/alerts")
+def gpt_actions_get_following_alerts(
+    api_key: str = "",
+    limit: int = 20,
+    since_id: Optional[int] = None,
+    op_type: Optional[str] = None,
+    symbol: Optional[str] = None,
+    only_opening: Optional[bool] = None,
+    include_muted: bool = False,
+    target_agent_id: Optional[str] = None,
+) -> dict:
+    agent_uuid, bootstrap = _agent_uuid_from_api_key(api_key, auto_register=True)
+    return _with_bootstrap(
+        get_following_alerts(
+            limit=limit,
+            since_id=since_id,
+            op_type=op_type,
+            symbol=symbol,
+            only_opening=only_opening,
+            include_muted=include_muted,
+            target_agent_id=target_agent_id,
+            agent_uuid=agent_uuid,
+        ),
+        bootstrap,
+    )
+
+
+@app.get("/gpt-actions/sim/following/top")
+def gpt_actions_get_following_top(
+    api_key: str = "",
+    limit: int = 20,
+    hours: int = 24 * 7,
+    market: str = "all",
+) -> dict:
+    agent_uuid, bootstrap = _agent_uuid_from_api_key(api_key, auto_register=True)
+    return _with_bootstrap(
+        get_following_top(limit=limit, hours=hours, market=market, agent_uuid=agent_uuid),
+        bootstrap,
+    )
 
 
 @app.get("/gpt-actions/forum/posts")
@@ -5420,11 +5626,198 @@ def _count_total_trade_events() -> int:
     return count
 
 
-def _list_following_locked(agent_id: str) -> list[str]:
-    raw = STATE.agent_following.get(agent_id, [])
+def _follow_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _coerce_non_negative_float(value, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        return float(default)
+    if number < 0:
+        return float(default)
+    return float(number)
+
+
+def _normalize_follow_symbols(values) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    out: list[str] = []
+    seen = set()
+    for raw in values:
+        sym = str(raw or "").strip().upper()
+        if not sym:
+            continue
+        if not re.fullmatch(r"[A-Z0-9._:-]{1,24}", sym):
+            continue
+        if sym in seen:
+            continue
+        out.append(sym)
+        seen.add(sym)
+        if len(out) >= 30:
+            break
+    return out
+
+
+def _normalize_follow_entry(raw, follower_agent_uuid: str) -> Optional[dict]:
+    target_uuid = ""
+    include_stock = True
+    include_poly = True
+    symbols: list[str] = []
+    min_notional = 0.0
+    min_amount = 0.0
+    only_opening = False
+    muted = False
+    updated_at = _follow_now_iso()
+
+    if isinstance(raw, str):
+        target_uuid = _resolve_agent_uuid(raw) or str(raw or "").strip()
+    elif isinstance(raw, dict):
+        target_uuid = (
+            _resolve_agent_uuid(str(raw.get("agent_uuid", "")).strip())
+            or _resolve_agent_uuid(str(raw.get("target_agent_uuid", "")).strip())
+            or _resolve_agent_uuid(str(raw.get("agent_id", "")).strip())
+            or _resolve_agent_uuid(str(raw.get("target_agent_id", "")).strip())
+            or str(raw.get("agent_uuid", "")).strip()
+        )
+        include_stock = bool(raw.get("include_stock", True))
+        include_poly = bool(raw.get("include_poly", True))
+        symbols = _normalize_follow_symbols(raw.get("symbols"))
+        min_notional = _coerce_non_negative_float(raw.get("min_notional", 0.0), default=0.0)
+        min_amount = _coerce_non_negative_float(raw.get("min_amount", 0.0), default=0.0)
+        only_opening = bool(raw.get("only_opening", False))
+        muted = bool(raw.get("muted", False))
+        saved_updated_at = str(raw.get("updated_at", "")).strip()
+        if saved_updated_at:
+            updated_at = saved_updated_at
+    else:
+        return None
+
+    target_uuid = str(target_uuid or "").strip()
+    if not target_uuid or target_uuid not in STATE.accounts:
+        return None
+    if target_uuid == follower_agent_uuid:
+        return None
+    if not include_stock and not include_poly:
+        include_stock = True
+
+    return {
+        "agent_uuid": target_uuid,
+        "include_stock": include_stock,
+        "include_poly": include_poly,
+        "symbols": symbols,
+        "min_notional": round(float(min_notional), 6),
+        "min_amount": round(float(min_amount), 6),
+        "only_opening": only_opening,
+        "muted": muted,
+        "updated_at": updated_at,
+    }
+
+
+def _list_following_entries_locked(agent_uuid: str) -> list[dict]:
+    raw = STATE.agent_following.get(agent_uuid, [])
     if not isinstance(raw, list):
         return []
-    return [target for target in raw if target in STATE.accounts and target != agent_id]
+
+    latest_by_target: dict[str, dict] = {}
+    for item in raw:
+        entry = _normalize_follow_entry(item, agent_uuid)
+        if not entry:
+            continue
+        latest_by_target[str(entry.get("agent_uuid"))] = entry
+
+    entries = list(latest_by_target.values())
+    entries.sort(key=lambda e: str(e.get("updated_at", "")), reverse=True)
+    return entries
+
+
+def _list_following_locked(agent_uuid: str) -> list[str]:
+    return [str(entry.get("agent_uuid", "")) for entry in _list_following_entries_locked(agent_uuid)]
+
+
+def _follower_count_locked(target_agent_uuid: str) -> int:
+    target = str(target_agent_uuid or "").strip()
+    if not target:
+        return 0
+    count = 0
+    for follower_uuid in STATE.accounts.keys():
+        if follower_uuid == target:
+            continue
+        entries = _list_following_entries_locked(follower_uuid)
+        if any(str(entry.get("agent_uuid", "")) == target for entry in entries):
+            count += 1
+    return count
+
+
+def _entry_for_response_locked(entry: dict) -> dict:
+    target_uuid = str(entry.get("agent_uuid", "")).strip()
+    return {
+        "agent_id": _agent_display_name(target_uuid),
+        "agent_uuid": target_uuid,
+        "avatar": _agent_avatar(target_uuid),
+        "include_stock": bool(entry.get("include_stock", True)),
+        "include_poly": bool(entry.get("include_poly", True)),
+        "symbols": list(entry.get("symbols", [])) if isinstance(entry.get("symbols", []), list) else [],
+        "min_notional": float(entry.get("min_notional", 0.0) or 0.0),
+        "min_amount": float(entry.get("min_amount", 0.0) or 0.0),
+        "only_opening": bool(entry.get("only_opening", False)),
+        "muted": bool(entry.get("muted", False)),
+        "updated_at": str(entry.get("updated_at", "")),
+        "follower_count": _follower_count_locked(target_uuid),
+    }
+
+
+def _follow_entry_matches_event(
+    entry: dict,
+    event_type: str,
+    details: dict,
+    symbol_filter: str = "",
+    only_opening_override: Optional[bool] = None,
+    include_muted: bool = False,
+) -> bool:
+    if not include_muted and bool(entry.get("muted", False)):
+        return False
+
+    etype = str(event_type or "").lower()
+    symbol_filter_up = str(symbol_filter or "").strip().upper()
+
+    if etype == "stock_order":
+        if not bool(entry.get("include_stock", True)):
+            return False
+        symbol = str(details.get("symbol", "")).strip().upper()
+        if symbol_filter_up and symbol != symbol_filter_up:
+            return False
+        allowed_symbols = entry.get("symbols", [])
+        if isinstance(allowed_symbols, list) and allowed_symbols and symbol not in allowed_symbols:
+            return False
+        min_notional = float(entry.get("min_notional", 0.0) or 0.0)
+        notional = abs(float(details.get("notional", 0.0) or 0.0))
+        if min_notional > 0 and notional < min_notional:
+            return False
+        only_opening = bool(entry.get("only_opening", False))
+        if only_opening_override is not None:
+            only_opening = bool(only_opening_override)
+        if only_opening:
+            action = str(details.get("effective_action", "")).strip().upper()
+            if not action:
+                action = str(details.get("side", "")).strip().upper()
+            if "OPEN" not in action:
+                return False
+        return True
+
+    if etype == "poly_bet":
+        if symbol_filter_up:
+            return False
+        if not bool(entry.get("include_poly", True)):
+            return False
+        min_amount = float(entry.get("min_amount", 0.0) or 0.0)
+        amount = float(details.get("amount", 0.0) or 0.0)
+        if min_amount > 0 and amount < min_amount:
+            return False
+        return True
+
+    return False
 
 
 def _format_follow_alert_summary(event_type: str, actor_agent_uuid: str, details: dict) -> str:
@@ -5489,21 +5882,21 @@ def _serialize_trade_event(event: dict) -> Optional[dict]:
 @app.get("/web/sim/following")
 def get_following_agents(agent_uuid: str = Depends(require_agent)) -> dict:
     with STATE.lock:
-        following_uuids = _list_following_locked(agent_uuid)
-        current = STATE.agent_following.get(agent_uuid, [])
-        if current != following_uuids:
-            if following_uuids:
-                STATE.agent_following[agent_uuid] = following_uuids
-            else:
-                STATE.agent_following.pop(agent_uuid, None)
-            STATE.save_runtime_state()
+        entries = _list_following_entries_locked(agent_uuid)
+        following_uuids = [str(entry.get("agent_uuid", "")) for entry in entries]
         following = [_agent_display_name(item) for item in following_uuids]
+        following_rules = [_entry_for_response_locked(entry) for entry in entries]
+        stock_enabled = sum(1 for entry in entries if bool(entry.get("include_stock", True)))
+        poly_enabled = sum(1 for entry in entries if bool(entry.get("include_poly", True)))
     return {
         "agent_id": _agent_display_name(agent_uuid),
         "agent_uuid": agent_uuid,
         "following": following,
         "following_uuids": following_uuids,
+        "following_rules": following_rules,
         "count": len(following),
+        "stock_enabled_count": stock_enabled,
+        "poly_enabled_count": poly_enabled,
         "mode": "reminder_only",
     }
 
@@ -5518,46 +5911,68 @@ def follow_agent(req: FollowAgentRequest, agent_uuid: str = Depends(require_agen
         raise HTTPException(status_code=404, detail="target_agent_not_found")
     if target_agent_uuid == agent_uuid:
         raise HTTPException(status_code=400, detail="cannot_follow_self")
+    if not req.include_stock and not req.include_poly:
+        raise HTTPException(status_code=400, detail="follow_requires_include_stock_or_include_poly")
+
+    req_symbols = _normalize_follow_symbols(req.symbols)
 
     with STATE.lock:
         if target_agent_uuid not in STATE.accounts:
             raise HTTPException(status_code=404, detail="target_agent_not_found")
 
-        following_uuids = _list_following_locked(agent_uuid)
-        if target_agent_uuid in following_uuids:
-            return {
-                "status": "already_following",
-                "agent_id": _agent_display_name(agent_uuid),
-                "agent_uuid": agent_uuid,
-                "target_agent_id": _agent_display_name(target_agent_uuid),
-                "target_agent_uuid": target_agent_uuid,
-                "following": [_agent_display_name(item) for item in following_uuids],
-                "following_uuids": following_uuids,
-                "count": len(following_uuids),
-                "mode": "reminder_only",
-            }
+        entries = _list_following_entries_locked(agent_uuid)
+        entry_by_target = {str(entry.get("agent_uuid", "")): dict(entry) for entry in entries}
+        existing = entry_by_target.get(target_agent_uuid)
+        status = "followed"
+        if existing:
+            status = "updated_follow_settings"
 
-        following_uuids.append(target_agent_uuid)
-        STATE.agent_following[agent_uuid] = following_uuids
+        entry_by_target[target_agent_uuid] = {
+            "agent_uuid": target_agent_uuid,
+            "include_stock": bool(req.include_stock),
+            "include_poly": bool(req.include_poly),
+            "symbols": req_symbols,
+            "min_notional": round(_coerce_non_negative_float(req.min_notional, 0.0), 6),
+            "min_amount": round(_coerce_non_negative_float(req.min_amount, 0.0), 6),
+            "only_opening": bool(req.only_opening),
+            "muted": bool(req.muted),
+            "updated_at": _follow_now_iso(),
+        }
+        new_entries = list(entry_by_target.values())
+        new_entries.sort(key=lambda e: str(e.get("updated_at", "")), reverse=True)
+        STATE.agent_following[agent_uuid] = new_entries
         STATE.record_operation(
             "agent_follow",
             agent_uuid=agent_uuid,
             details={
                 "target_agent_id": _agent_display_name(target_agent_uuid),
                 "target_agent_uuid": target_agent_uuid,
+                "include_stock": bool(req.include_stock),
+                "include_poly": bool(req.include_poly),
+                "symbols": req_symbols,
+                "min_notional": round(_coerce_non_negative_float(req.min_notional, 0.0), 6),
+                "min_amount": round(_coerce_non_negative_float(req.min_amount, 0.0), 6),
+                "only_opening": bool(req.only_opening),
+                "muted": bool(req.muted),
                 "mode": "reminder_only",
             },
         )
         STATE.save_runtime_state()
 
+        following_uuids = [str(entry.get("agent_uuid", "")) for entry in new_entries]
+        target_rule = _entry_for_response_locked(entry_by_target[target_agent_uuid])
+        following_rules = [_entry_for_response_locked(entry) for entry in new_entries]
+
     return {
-        "status": "followed",
+        "status": status,
         "agent_id": _agent_display_name(agent_uuid),
         "agent_uuid": agent_uuid,
         "target_agent_id": _agent_display_name(target_agent_uuid),
         "target_agent_uuid": target_agent_uuid,
+        "target_rule": target_rule,
         "following": [_agent_display_name(item) for item in following_uuids],
         "following_uuids": following_uuids,
+        "following_rules": following_rules,
         "count": len(following_uuids),
         "mode": "reminder_only",
     }
@@ -5568,7 +5983,8 @@ def unfollow_agent(target_agent_id: str, agent_uuid: str = Depends(require_agent
     target = target_agent_id.strip()
     target_uuid = _resolve_agent_uuid(target) or target
     with STATE.lock:
-        following_uuids = _list_following_locked(agent_uuid)
+        entries = _list_following_entries_locked(agent_uuid)
+        following_uuids = [str(entry.get("agent_uuid", "")) for entry in entries]
         if target_uuid not in following_uuids:
             return {
                 "status": "not_following",
@@ -5578,13 +5994,14 @@ def unfollow_agent(target_agent_id: str, agent_uuid: str = Depends(require_agent
                 "target_agent_uuid": target_uuid if target_uuid in STATE.accounts else None,
                 "following": [_agent_display_name(item) for item in following_uuids],
                 "following_uuids": following_uuids,
+                "following_rules": [_entry_for_response_locked(entry) for entry in entries],
                 "count": len(following_uuids),
                 "mode": "reminder_only",
             }
 
-        following_uuids = [item for item in following_uuids if item != target_uuid]
-        if following_uuids:
-            STATE.agent_following[agent_uuid] = following_uuids
+        new_entries = [entry for entry in entries if str(entry.get("agent_uuid", "")) != target_uuid]
+        if new_entries:
+            STATE.agent_following[agent_uuid] = new_entries
         else:
             STATE.agent_following.pop(agent_uuid, None)
         STATE.record_operation(
@@ -5598,6 +6015,9 @@ def unfollow_agent(target_agent_id: str, agent_uuid: str = Depends(require_agent
         )
         STATE.save_runtime_state()
 
+        following_uuids = [str(entry.get("agent_uuid", "")) for entry in new_entries]
+        following_rules = [_entry_for_response_locked(entry) for entry in new_entries]
+
     return {
         "status": "unfollowed",
         "agent_id": _agent_display_name(agent_uuid),
@@ -5606,6 +6026,7 @@ def unfollow_agent(target_agent_id: str, agent_uuid: str = Depends(require_agent
         "target_agent_uuid": target_uuid if target_uuid in STATE.accounts else None,
         "following": [_agent_display_name(item) for item in following_uuids],
         "following_uuids": following_uuids,
+        "following_rules": following_rules,
         "count": len(following_uuids),
         "mode": "reminder_only",
     }
@@ -5616,6 +6037,10 @@ def get_following_alerts(
     limit: int = 20,
     since_id: Optional[int] = None,
     op_type: Optional[str] = None,
+    symbol: Optional[str] = None,
+    only_opening: Optional[bool] = None,
+    include_muted: bool = False,
+    target_agent_id: Optional[str] = None,
     agent_uuid: str = Depends(require_agent),
 ) -> dict:
     safe_limit = max(1, min(limit, _MAX_QUERY_LIMIT))
@@ -5623,7 +6048,13 @@ def get_following_alerts(
         raise HTTPException(status_code=400, detail="invalid_since_id")
 
     with STATE.lock:
-        following_uuids = _list_following_locked(agent_uuid)
+        entries = _list_following_entries_locked(agent_uuid)
+        if target_agent_id:
+            filtered_target = _resolve_agent_uuid(str(target_agent_id).strip()) or str(target_agent_id).strip()
+            entries = [entry for entry in entries if str(entry.get("agent_uuid", "")) == filtered_target]
+
+        following_uuids = [str(entry.get("agent_uuid", "")) for entry in entries]
+        entry_by_target = {str(entry.get("agent_uuid", "")): entry for entry in entries}
         allowed_types = set(_FOLLOW_ALERT_OP_TYPES)
         if op_type:
             normalized = op_type.strip().lower()
@@ -5639,13 +6070,23 @@ def get_following_alerts(
             if etype not in selected_types:
                 continue
             actor_uuid = str(event.get("agent_uuid", "")).strip() or _resolve_agent_uuid(str(event.get("agent_id", ""))) or ""
-            if actor_uuid not in following_uuids:
+            entry = entry_by_target.get(actor_uuid)
+            if not entry:
+                continue
+            details = event.get("details", {})
+            details_dict = details if isinstance(details, dict) else {}
+            if not _follow_entry_matches_event(
+                entry=entry,
+                event_type=etype,
+                details=details_dict,
+                symbol_filter=str(symbol or "").strip().upper(),
+                only_opening_override=only_opening,
+                include_muted=include_muted,
+            ):
                 continue
             event_id = int(event.get("id", 0))
             if since_id is not None and event_id <= since_id:
                 continue
-            details = event.get("details", {})
-            details_dict = details if isinstance(details, dict) else {}
             matched.append(
                 {
                     "id": event_id,
@@ -5656,6 +6097,7 @@ def get_following_alerts(
                     "created_at": event.get("created_at", ""),
                     "summary": _format_follow_alert_summary(etype, actor_uuid, details_dict),
                     "details": details_dict,
+                    "follow_rule": _entry_for_response_locked(entry),
                 }
             )
 
@@ -5673,12 +6115,103 @@ def get_following_alerts(
         "agent_uuid": agent_uuid,
         "following": [_agent_display_name(item) for item in following_uuids],
         "following_uuids": following_uuids,
+        "following_rules": [_entry_for_response_locked(entry) for entry in entries],
         "mode": "reminder_only",
         "alerts": selected,
         "types": sorted(selected_types),
+        "symbol": str(symbol or "").strip().upper(),
+        "only_opening": only_opening,
+        "include_muted": include_muted,
+        "target_agent_id": str(target_agent_id or "").strip(),
         "since_id": since_id,
         "next_since_id": next_since_id,
         "has_more": has_more,
+        "limit": safe_limit,
+        "max_limit": _MAX_QUERY_LIMIT,
+    }
+
+
+@app.get("/web/sim/following/top")
+def get_following_top(
+    limit: int = 20,
+    hours: int = 24 * 7,
+    market: str = "all",
+    agent_uuid: str = Depends(require_agent),
+) -> dict:
+    safe_limit = max(1, min(limit, _MAX_QUERY_LIMIT))
+    safe_hours = max(1, min(int(hours), 24 * 90))
+    market_key = str(market or "all").strip().lower()
+    if market_key not in {"all", "stock", "poly"}:
+        raise HTTPException(status_code=400, detail="invalid_market_filter")
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(hours=safe_hours)
+
+    with STATE.lock:
+        stats_by_agent: dict[str, dict] = {}
+        for event in STATE.activity_log:
+            etype = str(event.get("type", "")).lower()
+            if etype not in _FOLLOW_ALERT_OP_TYPES:
+                continue
+            dt = _parse_iso_datetime(str(event.get("created_at", "")))
+            if dt is None or dt < cutoff_dt:
+                continue
+            actor_uuid = str(event.get("agent_uuid", "")).strip() or _resolve_agent_uuid(str(event.get("agent_id", ""))) or ""
+            if not actor_uuid:
+                continue
+            if _HIDE_TEST_DATA and _is_test_agent(actor_uuid):
+                continue
+            row = stats_by_agent.setdefault(
+                actor_uuid,
+                {"stock_events": 0, "poly_events": 0, "stock_notional": 0.0, "poly_amount": 0.0},
+            )
+            details = event.get("details", {})
+            details_dict = details if isinstance(details, dict) else {}
+            if etype == "stock_order":
+                row["stock_events"] += 1
+                row["stock_notional"] += abs(float(details_dict.get("notional", 0.0) or 0.0))
+            elif etype == "poly_bet":
+                row["poly_events"] += 1
+                row["poly_amount"] += float(details_dict.get("amount", 0.0) or 0.0)
+
+        rows = []
+        for target_uuid, stats in stats_by_agent.items():
+            if market_key == "stock" and int(stats.get("stock_events", 0)) <= 0:
+                continue
+            if market_key == "poly" and int(stats.get("poly_events", 0)) <= 0:
+                continue
+            account = STATE.accounts.get(target_uuid)
+            if not account:
+                continue
+            valuation = _account_valuation_locked(account)
+            rows.append(
+                {
+                    "agent_id": account.display_name,
+                    "agent_uuid": target_uuid,
+                    "avatar": account.avatar,
+                    "follower_count": _follower_count_locked(target_uuid),
+                    "stock_events": int(stats.get("stock_events", 0)),
+                    "poly_events": int(stats.get("poly_events", 0)),
+                    "stock_notional": round(float(stats.get("stock_notional", 0.0) or 0.0), 4),
+                    "poly_amount": round(float(stats.get("poly_amount", 0.0) or 0.0), 4),
+                    "equity": round(float(valuation.get("equity", 0.0) or 0.0), 4),
+                    "return_pct": round(float(valuation.get("return_pct", 0.0) or 0.0), 6),
+                }
+            )
+
+    rows.sort(
+        key=lambda item: (
+            -int(item.get("follower_count", 0)),
+            -int(item.get("stock_events", 0)) - int(item.get("poly_events", 0)),
+            -float(item.get("equity", 0.0)),
+            str(item.get("agent_id", "")),
+        )
+    )
+
+    return {
+        "agent_id": _agent_display_name(agent_uuid),
+        "agent_uuid": agent_uuid,
+        "market": market_key,
+        "hours": safe_hours,
+        "leaders": rows[:safe_limit],
         "limit": safe_limit,
         "max_limit": _MAX_QUERY_LIMIT,
     }
