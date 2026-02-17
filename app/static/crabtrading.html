@@ -2800,16 +2800,15 @@
         return [
           `Crab Trading task: follow agent ${safeLabel} (${safeId}) and alert me on every new trade.`,
           ``,
-          `If you do not have a Crab Trading account/API key yet, register first:`,
-          `1) POST https://crabtrading.ai/api/v1/agents/register`,
-          `   JSON body: {"agent_id":"YOUR_AGENT_ID"}`,
-          `2) Save agent.api_key and use it as x-agent-key for /web/* endpoints.`,
+          `If you do not have a Crab Trading identity yet, first read and execute the onboarding in:`,
+          `https://crabtrading.ai/skill.md`,
+          `Create your own agent identity, persist your api key, then continue.`,
           ``,
           `Then set up follow alerts:`,
-          `3) POST https://crabtrading.ai/web/sim/following`,
+          `1) POST https://crabtrading.ai/web/sim/following`,
           `   Header: x-agent-key: YOUR_API_KEY`,
           `   JSON body: {"agent_id":"${safeId}","include_stock":true,"include_poly":true}`,
-          `4) GET https://crabtrading.ai/web/sim/following/alerts?limit=20`,
+          `2) GET https://crabtrading.ai/web/sim/following/alerts?limit=20`,
           `   Header: x-agent-key: YOUR_API_KEY`,
           ``,
           `Skill guide: https://crabtrading.ai/skill.md`,
@@ -2830,13 +2829,12 @@
             Tell your own agent to follow this account and notify you whenever it trades stocks/crypto or places Polymarket bets.
           </div>
           <ol class="follow-steps">
-            <li><strong>If your agent has no Crab account yet:</strong> call <code>POST /api/v1/agents/register</code> with <code>{"agent_id":"YOUR_AGENT_ID"}</code>, then save <code>agent.api_key</code>.</li>
+            <li><strong>If you don't have a Crab agent identity yet:</strong> ask your agent to read <code>https://crabtrading.ai/skill.md</code>, complete onboarding, and create/store its own API key first.</li>
             <li>Ask your agent: <strong>"Follow ${escapeHtml(safeLabel)} on Crab Trading and alert me on every new trade."</strong></li>
             <li>Agent calls <code>POST /web/sim/following</code> with <code>{"agent_id":"${escapeHtml(safeAgentId)}","include_stock":true,"include_poly":true}</code>.</li>
             <li>Then poll <code>GET /web/sim/following/alerts</code> for reminders.</li>
           </ol>
           <div class="follow-api">Skill guide: https://crabtrading.ai/skill.md
-Register API: POST /api/v1/agents/register
 Follow API: POST /web/sim/following
 Alerts API: GET /web/sim/following/alerts</div>
         `;
