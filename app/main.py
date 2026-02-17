@@ -1995,6 +1995,19 @@ def _fetch_polymarket_markets(limit: int = 30) -> list[dict]:
     return normalized
 
 
+def _poly_market_label(market_id: str) -> str:
+    mid = str(market_id or "").strip()
+    if not mid:
+        return ""
+    market = STATE.poly_markets.get(mid, {})
+    if isinstance(market, dict):
+        for key in ("question", "title", "name", "slug"):
+            text = str(market.get(key, "")).strip()
+            if text:
+                return text
+    return mid
+
+
 def _absolute_primary_url(path: str = "/") -> str:
     clean = str(path or "/").strip()
     if not clean.startswith("/"):
@@ -4062,8 +4075,8 @@ def today_page() -> str:
         else:
             outcome = str(t.get("outcome", "")).upper()
             amount = float(t.get("amount", 0.0) or 0.0)
-            market_id = str(t.get("market_id", "")).strip()
-            label = f"POLY {outcome} ${amount:.2f} ({market_id})"
+            market_label = str(t.get("market_label", "")).strip() or _poly_market_label(str(t.get("market_id", "")).strip())
+            label = f"POLY {outcome} ${amount:.2f} · {market_label}"
         share = _absolute_primary_url(_agent_share_path(agent, int(tid))) if tid.isdigit() else _absolute_primary_url(_agent_share_path(agent))
         return f"<li class='today-row'><div class='today-row-left'><div class='today-row-title'><a class='today-agent' href='{html_escape(_agent_page_path(agent))}'>{html_escape(agent)}</a> <span class='muted'>· {html_escape(when)}</span></div><div class='today-trade'>{html_escape(label)}</div></div><div class='today-row-right'><a class='pill' href='{html_escape(share)}'>share</a></div></li>"
 
@@ -4421,9 +4434,10 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
             )
         elif etype == "poly_bet":
             market_id = str(details.get("market_id", ""))
+            market_label = _poly_market_label(market_id)
             outcome = str(details.get("outcome", "")).upper()
             amount = float(details.get("amount", 0.0))
-            trade_lines.append(f"<li>{html_escape(when)} · POLY {html_escape(outcome)} ${amount:.2f} ({html_escape(market_id)}){share_link}</li>")
+            trade_lines.append(f"<li>{html_escape(when)} · POLY {html_escape(outcome)} ${amount:.2f} · {html_escape(market_label)}{share_link}</li>")
     trades_html = "".join(trade_lines)
     poly_html = "".join(poly_lines)
     realized_gain = float(getattr(account, "realized_pnl", 0.0)) + float(getattr(account, "poly_realized_pnl", 0.0))
@@ -4574,10 +4588,11 @@ def og_trade_share_card(trade_id: int) -> PlainTextResponse:
         accent = "#64d8a8" if side == "BUY" else "#ff8aa3"
     else:
         market_id = str(details.get("market_id", ""))
+        market_label = _poly_market_label(market_id)
         outcome = str(details.get("outcome", "")).upper()
         amount = float(details.get("amount", 0.0))
         shares = float(details.get("shares", 0.0))
-        detail_lines.append(f"BET ${amount:.2f} on {outcome} · Shares {shares:.4f} ({market_id})")
+        detail_lines.append(f"BET ${amount:.2f} on {outcome} · {market_label} · Shares {shares:.4f}")
         subtitle = "Simulated Polymarket execution"
         accent = "#8f94ff"
 
@@ -5833,9 +5848,10 @@ def _format_follow_alert_summary(event_type: str, actor_agent_uuid: str, details
         return f"{actor_label} {side} {qty:g} {symbol} @ ${fill_price:.2f}"
     if event_type == "poly_bet":
         market_id = str(details.get("market_id", ""))
+        market_label = _poly_market_label(market_id)
         outcome = str(details.get("outcome", "")).upper()
         amount = float(details.get("amount", 0))
-        return f"{actor_label} bet ${amount:.2f} on {outcome} ({market_id})"
+        return f"{actor_label} bet ${amount:.2f} on {outcome} · {market_label}"
     return f"{actor_label} performed {event_type}"
 
 
@@ -5868,9 +5884,11 @@ def _serialize_trade_event(event: dict) -> Optional[dict]:
             }
         )
     elif etype == "poly_bet":
+        market_id = str(details_dict.get("market_id", ""))
         base.update(
             {
-                "market_id": str(details_dict.get("market_id", "")),
+                "market_id": market_id,
+                "market_label": _poly_market_label(market_id),
                 "outcome": str(details_dict.get("outcome", "")).upper(),
                 "amount": float(details_dict.get("amount", 0)),
                 "shares": float(details_dict.get("shares", 0)),

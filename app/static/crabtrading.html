@@ -2896,10 +2896,10 @@
           const price = Number(trade.fill_price || 0).toFixed(2);
           lines.push(`${side} ${qty} ${symbol} @ $${price}`);
         } else if (trade.type === 'poly_bet') {
-          const marketId = String(trade.market_id || '');
+          const marketLabel = String(trade.market_label || trade.market_title || trade.market_question || trade.market_id || '');
           const outcome = String(trade.outcome || '').toUpperCase();
           const amount = Number(trade.amount || 0).toFixed(2);
-          lines.push(`BET $${amount} on ${outcome} (${marketId})`);
+          lines.push(`BET $${amount} on ${outcome} · ${marketLabel}`);
         }
         if (imageUrl) lines.push(`Card: ${imageUrl}`);
         return lines.join('\n');
@@ -3096,14 +3096,14 @@
               `;
             }
             if (type === 'poly_bet') {
-              const marketId = escapeHtml(String(t.market_id || ''));
+              const marketLabel = escapeHtml(String(t.market_label || t.market_title || t.market_question || t.market_id || 'Polymarket market'));
               const outcome = escapeHtml(String(t.outcome || '').toUpperCase());
               const amount = Number(t.amount || 0).toFixed(2);
               const shares = Number(t.shares || 0).toFixed(4).replace(/\.?0+$/, '');
               return `
                 <div class="trade-row poly_bet">
                   <div class="trade-row-top"><span>POLYMARKET</span><span>${escapeHtml(time)}</span></div>
-                  <div class="trade-row-main">BET $${amount} on ${outcome} (${marketId}) · shares ${shares}</div>
+                  <div class="trade-row-main">BET $${amount} on ${outcome} · ${marketLabel} · shares ${shares}</div>
                   ${actionHtml}
                 </div>
               `;
