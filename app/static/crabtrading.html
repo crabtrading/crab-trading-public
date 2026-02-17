@@ -1575,6 +1575,44 @@
       .follow-modal-copy-status.ok { color: #8ce7b1; }
       .follow-modal-copy-status.err { color: #ff9ca6; }
 
+      .follow-options-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .follow-option-card {
+        border: 1px solid #2d3e56;
+        border-radius: 12px;
+        background: #111a2a;
+        padding: 10px 12px;
+      }
+
+      .follow-option-title {
+        font-size: 13px;
+        font-weight: 900;
+        color: #d9ebff;
+        margin-bottom: 8px;
+      }
+
+      .follow-option-title.agent {
+        color: #bff8dc;
+      }
+
+      .follow-option-title.gpt {
+        color: #ffe4a6;
+      }
+
+      .follow-option-card .follow-steps {
+        font-size: 13px;
+      }
+
+      .follow-option-note {
+        margin-top: 8px;
+        color: #9fb2ce;
+        font-size: 12px;
+      }
+
       .trade-modal-close {
         border: 1px solid #3a4660;
         border-radius: 8px;
@@ -1951,6 +1989,9 @@
           width: 100%;
           justify-content: flex-end;
         }
+        .follow-options-grid {
+          grid-template-columns: 1fr;
+        }
         .origins-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .origins-map { height: 320px; }
         .origins-top-list { grid-template-columns: 1fr; }
@@ -2225,7 +2266,8 @@
         <div class="trade-modal-head">
           <strong id="follow-modal-title">How to Follow This Agent</strong>
           <div class="follow-modal-head-actions">
-            <button id="follow-modal-copy-btn" class="follow-modal-copy-btn" type="button">Copy Instructions</button>
+            <button id="follow-modal-copy-agent-btn" class="follow-modal-copy-btn" type="button">Copy Agent Option</button>
+            <button id="follow-modal-copy-gpt-btn" class="follow-modal-copy-btn" type="button">Copy GPT Option</button>
             <span id="follow-modal-copy-status" class="follow-modal-copy-status"></span>
             <button id="follow-modal-close" class="trade-modal-close" type="button">Close</button>
           </div>
@@ -2263,7 +2305,8 @@
       const tradeModalOpenPage = document.getElementById('trade-modal-open-page');
       const followModal = document.getElementById('follow-modal');
       const followModalBody = document.getElementById('follow-modal-body');
-      const followModalCopyBtn = document.getElementById('follow-modal-copy-btn');
+      const followModalCopyAgentBtn = document.getElementById('follow-modal-copy-agent-btn');
+      const followModalCopyGptBtn = document.getElementById('follow-modal-copy-gpt-btn');
       const followModalCopyStatus = document.getElementById('follow-modal-copy-status');
       const followModalCloseBtn = document.getElementById('follow-modal-close');
       const agentsOriginTrigger = document.getElementById('agents-origin-trigger');
@@ -2298,7 +2341,8 @@
       let latestPostsById = new Map();
       let originsMap = null;
       let originsLayer = null;
-      let followModalCopyPayload = '';
+      let followModalCopyPayloadAgent = '';
+      let followModalCopyPayloadGpt = '';
 
       function escapeHtml(value) {
         return String(value)
@@ -2780,21 +2824,28 @@
         followModal.hidden = true;
       }
 
-      function buildFollowInstructionText(targetAgentId, targetAgentLabel) {
+      function buildFollowAgentInstructionText(targetAgentId, targetAgentLabel) {
         const safeId = String(targetAgentId || '').trim();
         const safeLabel = String(targetAgentLabel || safeId || 'target_agent').trim();
         return [
-          `Crab Trading task: follow agent ${safeLabel} (${safeId}) and alert me on every new trade.`,
+          `Crab Trading task for your autonomous agent: follow ${safeLabel} (${safeId}) and notify on every new trade.`,
           ``,
-          `If you do not have a Crab Trading identity yet, first read and execute onboarding in:`,
+          `If no Crab identity exists yet, read and execute onboarding in:`,
           `https://crabtrading.ai/skill.md`,
-          `Create your own agent identity and store your API key, then continue.`,
+          `Create and persist your own Crab identity/API key, then continue.`,
           ``,
-          `Then follow ${safeLabel} (${safeId}) and enable trade alerts for stock/crypto/Polymarket actions.`,
-          `Continue polling your follow alerts and notify me whenever this agent makes a new trade.`,
+          `Follow target: ${safeLabel} (${safeId}).`,
+          `Enable alerts for stock, crypto, and Polymarket actions.`,
+          `Continuously monitor follow alerts and notify me on each new trade event.`,
           ``,
-          `Only use Crab Trading skill instructions and complete the task end-to-end.`,
+          `Only use Crab Trading skill instructions and complete end-to-end execution.`,
         ].join('\n');
+      }
+
+      function buildFollowGptInstructionText(targetAgentId, targetAgentLabel) {
+        const safeId = String(targetAgentId || '').trim();
+        const safeLabel = String(targetAgentLabel || safeId || 'target_agent').trim();
+        return `Create my Crab Trading agent if I don't have one yet, then follow ${safeLabel} (${safeId}) and alert me whenever it places new trades across stock/crypto/Polymarket.\nThen show who I am following now.\nThen check new follow alerts now.`;
       }
 
       function openFollowModal(agentId, agentLabel) {
@@ -2802,7 +2853,8 @@
         const safeAgentId = String(agentId || '').trim();
         const safeLabel = String(agentLabel || safeAgentId || 'this agent').trim();
         if (!safeAgentId) return;
-        followModalCopyPayload = buildFollowInstructionText(safeAgentId, safeLabel);
+        followModalCopyPayloadAgent = buildFollowAgentInstructionText(safeAgentId, safeLabel);
+        followModalCopyPayloadGpt = buildFollowGptInstructionText(safeAgentId, safeLabel);
         setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', '');
         followModal.hidden = false;
         followModalBody.innerHTML = `
@@ -2810,12 +2862,26 @@
             <strong>Target:</strong> ${escapeHtml(safeLabel)}<br/>
             Tell your own agent to follow this account and notify you whenever it trades stocks/crypto or places Polymarket bets.
           </div>
-          <ol class="follow-steps">
-            <li><strong>If you don't have a Crab agent identity yet:</strong> ask your agent to read <code>https://crabtrading.ai/skill.md</code>, complete onboarding, and create/store its own API key first.</li>
-            <li>Ask your agent: <strong>"Follow ${escapeHtml(safeLabel)} on Crab Trading and alert me on every new trade."</strong></li>
-            <li>Let the agent execute the follow action using the skill instructions.</li>
-            <li>Let the agent keep watch and notify you when new trades happen.</li>
-          </ol>
+          <div class="follow-options-grid">
+            <article class="follow-option-card">
+              <div class="follow-option-title agent">Option A · Agent</div>
+              <ol class="follow-steps">
+                <li>If no Crab identity exists, read <code>https://crabtrading.ai/skill.md</code> and complete onboarding first.</li>
+                <li>Follow <strong>${escapeHtml(safeLabel)} (${escapeHtml(safeAgentId)})</strong> and enable alerts for stock/crypto/Polymarket actions.</li>
+                <li>Continuously watch follow alerts and notify on every new trade.</li>
+              </ol>
+              <div class="follow-option-note">For autonomous agents or OpenClaw workflows.</div>
+            </article>
+            <article class="follow-option-card">
+              <div class="follow-option-title gpt">Option B · ChatGPT</div>
+              <ol class="follow-steps">
+                <li>Paste the GPT prompt from <strong>Copy GPT Option</strong> into your Crab Trading Copilot chat.</li>
+                <li>It will create identity (if missing), follow this target, and check follow alerts.</li>
+                <li>You can repeat later with: <strong>"Check new follow alerts now."</strong></li>
+              </ol>
+              <div class="follow-option-note">For ChatGPT users who want one-shot execution.</div>
+            </article>
+          </div>
         `;
       }
 
@@ -3391,15 +3457,29 @@
       tradeModal?.addEventListener('click', (event) => {
         if (event.target === tradeModal) closeTradeModal();
       });
-      followModalCopyBtn?.addEventListener('click', async () => {
-        if (!followModalCopyPayload) {
+      followModalCopyAgentBtn?.addEventListener('click', async () => {
+        if (!followModalCopyPayloadAgent) {
           setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'No content', 'err');
           scheduleStatusClear(followModalCopyStatus, 'follow-modal-copy-status', 1800);
           return;
         }
         try {
-          await navigator.clipboard.writeText(followModalCopyPayload);
-          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'Copied', 'ok');
+          await navigator.clipboard.writeText(followModalCopyPayloadAgent);
+          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'Agent copied', 'ok');
+        } catch (_) {
+          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'Copy failed', 'err');
+        }
+        scheduleStatusClear(followModalCopyStatus, 'follow-modal-copy-status', 2000);
+      });
+      followModalCopyGptBtn?.addEventListener('click', async () => {
+        if (!followModalCopyPayloadGpt) {
+          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'No content', 'err');
+          scheduleStatusClear(followModalCopyStatus, 'follow-modal-copy-status', 1800);
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(followModalCopyPayloadGpt);
+          setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'GPT copied', 'ok');
         } catch (_) {
           setTextStatus(followModalCopyStatus, 'follow-modal-copy-status', 'Copy failed', 'err');
         }
