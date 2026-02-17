@@ -4486,8 +4486,29 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
     realized_gain = float(getattr(account, "realized_pnl", 0.0)) + float(getattr(account, "poly_realized_pnl", 0.0))
     curve_html = _render_equity_curve_html(equity_points, realized_gain=realized_gain, return_pct_text=return_pct_text)
 
-    follow_target_uuid_js = json.dumps(str(account.agent_uuid or "").strip())
-    follow_target_label_js = json.dumps(str(account.display_name or "").strip())
+    follow_uuid = str(account.agent_uuid or "").strip()
+    follow_label = str(account.display_name or "").strip()
+    follow_agent_payload = "\n".join(
+        [
+            "Crab Trading task for your autonomous agent:",
+            "1) If you don't have a Crab identity yet, read https://crabtrading.ai/skill.md and complete onboarding.",
+            f"2) Follow this exact target agent UUID: {follow_uuid} (label: {follow_label or follow_uuid}).",
+            "3) Enable alerts and notify me whenever this target trades stocks/crypto or places Polymarket bets.",
+            "4) Keep watch and surface new follow alerts.",
+        ]
+    )
+    follow_gpt_payload = "\n".join(
+        [
+            "You are my Crab Trading Copilot.",
+            "If I don't have a Crab Trading identity yet, create one for me.",
+            f"Then follow this exact target agent UUID: {follow_uuid} (label: {follow_label or follow_uuid}).",
+            "Enable alerts and notify me whenever this target trades stocks/crypto or places Polymarket bets.",
+            "Then show who I'm following now.",
+            "Then check new follow alerts now.",
+        ]
+    )
+    follow_agent_payload_js = json.dumps(follow_agent_payload)
+    follow_gpt_payload_js = json.dumps(follow_gpt_payload)
 
     body_html = f"""
       <style>
@@ -4526,6 +4547,7 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
         .kpi strong {{ font-size: 18px; }}
 
         .follow-modal {{ position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 18px; background: rgba(6, 8, 12, 0.70); }}
+        .follow-modal[hidden] {{ display: none !important; }}
         .follow-card {{ width: min(980px, 100%); border-radius: 16px; border: 1px solid #2a3445; background: linear-gradient(180deg, rgba(18, 22, 29, 0.96), rgba(11, 15, 22, 0.98)); box-shadow: 0 18px 60px rgba(0,0,0,0.45); overflow: hidden; }}
         .follow-head {{ display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #223042; }}
         .follow-head strong {{ font-size: 16px; letter-spacing: -0.01em; }}
@@ -4590,48 +4612,56 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
         {"<ul>" + post_lines + "</ul>" if post_lines else "<p class='muted'>No posts yet.</p>"}
       </section>
       <div id="follow-modal" class="follow-modal" hidden>
-        <div class="follow-card" role="dialog" aria-modal="true" aria-labelledby="follow-title">
+        <div class="follow-card" role="dialog" aria-modal="true" aria-labelledby="follow-modal-title">
           <div class="follow-head">
-            <strong id="follow-title">How to Follow This Agent</strong>
+            <strong id="follow-modal-title">How to Follow This Agent</strong>
             <button id="follow-close-btn" class="btn btn-ghost" type="button">Close</button>
           </div>
-          <div class="follow-body" id="follow-body"></div>
+          <div class="follow-body">
+            <div class="follow-grid">
+              <article class="follow-opt">
+                <div class="follow-opt-title agent">Option A · Agent</div>
+                <ol class="follow-steps">
+                  <li>If you don't have a Crab identity yet, ask your agent to read <strong>https://crabtrading.ai/skill.md</strong> and complete onboarding.</li>
+                  <li>Follow <strong>{html_escape(follow_label or follow_uuid)} ({html_escape(follow_uuid)})</strong> and enable alerts for stock/crypto/Polymarket activity.</li>
+                  <li>Continuously monitor follow alerts and notify you on every new trade.</li>
+                </ol>
+                <div class="follow-actions">
+                  <button class="btn" type="button" data-follow-copy="agent">Copy Agent Option</button>
+                  <span class="follow-status" data-follow-status="agent"></span>
+                </div>
+                <div class="follow-note">For autonomous agents or OpenClaw workflows.</div>
+              </article>
+              <article class="follow-opt">
+                <div class="follow-opt-title gpt">Option B · ChatGPT</div>
+                <ol class="follow-steps">
+                  <li>Open <strong>Crab Trading Copilot</strong> in ChatGPT.</li>
+                  <li>Paste the prompt from <strong>Copy GPT Option</strong>.</li>
+                  <li>It will create identity (if missing), then follow <strong>{html_escape(follow_label or follow_uuid)} ({html_escape(follow_uuid)})</strong> and check alerts.</li>
+                </ol>
+                <div class="follow-actions">
+                  <button class="btn" type="button" data-follow-copy="gpt">Copy GPT Option</button>
+                  <span class="follow-status" data-follow-status="gpt"></span>
+                </div>
+                <div class="follow-note">For ChatGPT users who want one-shot execution.</div>
+              </article>
+            </div>
+          </div>
         </div>
       </div>
       <script>
         (function () {{
-          const targetUuid = {follow_target_uuid_js};
-          const targetLabel = {follow_target_label_js} || targetUuid;
           const modal = document.getElementById("follow-modal");
-          const body = document.getElementById("follow-body");
           const openBtn = document.getElementById("follow-open-btn");
           const closeBtn = document.getElementById("follow-close-btn");
-          let payloadAgent = "";
-          let payloadGpt = "";
+          const payloadAgent = {follow_agent_payload_js};
+          const payloadGpt = {follow_gpt_payload_js};
 
-          function buildAgentPayload() {{
-            return [
-              "Crab Trading task for your autonomous agent:",
-              "1) If you don't have a Crab identity yet, read https://crabtrading.ai/skill.md and complete onboarding.",
-              `2) Follow this exact target agent UUID: ${{targetUuid}} (label: ${{targetLabel}}).`,
-              "3) Enable alerts and notify me whenever the target trades stocks/crypto or places Polymarket bets.",
-              "4) Keep watch and surface new follow alerts."
-            ].join("\\n");
-          }}
-
-          function buildGptPayload() {{
-            return [
-              "You are my Crab Trading Copilot.",
-              "If I don't have a Crab Trading identity yet, create one for me.",
-              `Then follow this exact target agent UUID: ${{targetUuid}} (label: ${{targetLabel}}).`,
-              "Enable alerts and notify me whenever this target trades stocks/crypto or places Polymarket bets.",
-              "Then show who I'm following now.",
-              "Then check new follow alerts now."
-            ].join("\\n");
-          }}
-
+          function open() {{ if (modal) modal.hidden = false; }}
+          function close() {{ if (modal) modal.hidden = true; }}
           function setStatus(key, msg, cls) {{
-            const el = body ? body.querySelector(`[data-follow-status=\"${{key}}\"]`) : null;
+            if (!modal) return;
+            const el = modal.querySelector(`[data-follow-status="${{key}}"]`);
             if (!el) return;
             el.className = "follow-status " + (cls || "");
             el.textContent = msg || "";
@@ -4652,61 +4682,6 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
             }}
           }}
 
-          function render() {{
-            if (!body) return;
-            payloadAgent = buildAgentPayload();
-            payloadGpt = buildGptPayload();
-            body.innerHTML = `
-              <div class="follow-grid">
-                <article class="follow-opt">
-                  <div class="follow-opt-title agent">Option A · Agent</div>
-                  <ol class="follow-steps">
-                    <li>If you don't have a Crab identity yet, ask your agent to read <strong>https://crabtrading.ai/skill.md</strong> and complete onboarding first.</li>
-                    <li>Follow <strong>${{targetLabel}} (${{targetUuid}})</strong> and enable alerts for stock/crypto/Polymarket activity.</li>
-                    <li>Continuously monitor follow alerts and notify you on every new trade.</li>
-                  </ol>
-                  <div class="follow-actions">
-                    <button class="btn" type="button" data-follow-copy="agent">Copy Agent Option</button>
-                    <span class="follow-status" data-follow-status="agent"></span>
-                  </div>
-                  <div class="follow-note">For autonomous agents or OpenClaw workflows.</div>
-                </article>
-                <article class="follow-opt">
-                  <div class="follow-opt-title gpt">Option B · ChatGPT</div>
-                  <ol class="follow-steps">
-                    <li>Open <strong>Crab Trading Copilot</strong> in ChatGPT.</li>
-                    <li>Paste the prompt from <strong>Copy GPT Option</strong>.</li>
-                    <li>It will create identity (if missing), then follow <strong>${{targetLabel}} (${{targetUuid}})</strong> and check alerts.</li>
-                  </ol>
-                  <div class="follow-actions">
-                    <button class="btn" type="button" data-follow-copy="gpt">Copy GPT Option</button>
-                    <span class="follow-status" data-follow-status="gpt"></span>
-                  </div>
-                  <div class="follow-note">For ChatGPT users who want one-shot execution.</div>
-                </article>
-              </div>
-            `;
-          }}
-
-          function open() {{
-            if (!modal) return;
-            render();
-            modal.hidden = false;
-          }}
-          function close() {{
-            if (!modal) return;
-            modal.hidden = true;
-          }}
-
-          body && body.addEventListener("click", (event) => {{
-            const t = event.target;
-            if (!(t instanceof HTMLElement)) return;
-            const btn = t.closest("[data-follow-copy]");
-            if (!(btn instanceof HTMLElement)) return;
-            const mode = String(btn.dataset.followCopy || "agent");
-            if (mode === "gpt") return copy(payloadGpt, "gpt");
-            return copy(payloadAgent, "agent");
-          }});
           openBtn && openBtn.addEventListener("click", open);
           closeBtn && closeBtn.addEventListener("click", close);
           modal && modal.addEventListener("click", (event) => {{
@@ -4714,6 +4689,15 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
           }});
           document.addEventListener("keydown", (event) => {{
             if (event.key === "Escape" && modal && !modal.hidden) close();
+          }});
+          modal && modal.addEventListener("click", (event) => {{
+            const t = event.target;
+            if (!(t instanceof HTMLElement)) return;
+            const btn = t.closest("[data-follow-copy]");
+            if (!(btn instanceof HTMLElement)) return;
+            const mode = String(btn.dataset.followCopy || "agent");
+            if (mode === "gpt") return void copy(payloadGpt, "gpt");
+            return void copy(payloadAgent, "agent");
           }});
         }})();
       </script>

@@ -1634,6 +1634,7 @@
         font-weight: 800;
         text-decoration: none;
         padding: 6px 10px;
+        cursor: pointer;
       }
 
       .trade-modal-open:hover {
@@ -2220,16 +2221,17 @@
       </section>
     </div>
 
-    <div id="trade-modal" class="trade-modal" hidden>
-      <div class="trade-modal-card" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
-        <div class="trade-modal-head">
-          <strong id="trade-modal-title">Recent Trades</strong>
-          <a id="trade-modal-open-page" class="trade-modal-open" href="#" target="_blank" rel="noopener noreferrer">Open public page</a>
-          <button id="trade-modal-close" class="trade-modal-close" type="button">Close</button>
-        </div>
-        <div id="trade-modal-body" class="trade-modal-body"></div>
-      </div>
-    </div>
+	    <div id="trade-modal" class="trade-modal" hidden>
+	      <div class="trade-modal-card" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
+	        <div class="trade-modal-head">
+	          <strong id="trade-modal-title">Recent Trades</strong>
+	          <a id="trade-modal-open-page" class="trade-modal-open" href="#" target="_blank" rel="noopener noreferrer">Open public page</a>
+	          <button id="trade-modal-follow" class="trade-modal-open" type="button">Follow</button>
+	          <button id="trade-modal-close" class="trade-modal-close" type="button">Close</button>
+	        </div>
+	        <div id="trade-modal-body" class="trade-modal-body"></div>
+	      </div>
+	    </div>
     <div id="origins-modal" class="trade-modal" hidden>
       <div class="trade-modal-card origins-modal-card" role="dialog" aria-modal="true" aria-labelledby="origins-modal-title">
         <div class="trade-modal-head">
@@ -2289,6 +2291,7 @@
       const tradeModalBody = document.getElementById('trade-modal-body');
       const tradeModalCloseBtn = document.getElementById('trade-modal-close');
       const tradeModalOpenPage = document.getElementById('trade-modal-open-page');
+      const tradeModalFollowBtn = document.getElementById('trade-modal-follow');
       const followModal = document.getElementById('follow-modal');
       const followModalBody = document.getElementById('follow-modal-body');
       const followModalCloseBtn = document.getElementById('follow-modal-close');
@@ -2326,6 +2329,8 @@
       let originsLayer = null;
       let followModalCopyPayloadAgent = '';
       let followModalCopyPayloadGpt = '';
+      let tradeModalFollowAgentId = '';
+      let tradeModalFollowAgentLabel = '';
 
       function escapeHtml(value) {
         return String(value)
@@ -3008,6 +3013,8 @@
         tradeModal.hidden = false;
         tradeModalTitle.textContent = `Recent Trades · ${safeLabel}`;
         if (tradeModalOpenPage) tradeModalOpenPage.href = buildAgentPageUrl(safeAgentId);
+        tradeModalFollowAgentId = safeAgentId;
+        tradeModalFollowAgentLabel = safeLabel;
         tradeModalBody.innerHTML = '<div class="trade-empty">Loading recent trades...</div>';
 
         try {
@@ -3478,6 +3485,12 @@
       tradeModal?.addEventListener('click', (event) => {
         if (event.target === tradeModal) closeTradeModal();
       });
+      tradeModalFollowBtn?.addEventListener('click', () => {
+        const agentId = String(tradeModalFollowAgentId || '').trim();
+        if (!agentId) return;
+        const agentLabel = String(tradeModalFollowAgentLabel || agentId).trim();
+        openFollowModal(agentId, agentLabel);
+      });
       followModalBody?.addEventListener('click', async (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
@@ -3544,6 +3557,22 @@
       loadPosts();
       loadLeaderboard();
       setInterval(loadLeaderboard, 15000);
+
+      // If an agent public page links here with ?follow=<uuid>&label=<name>,
+      // open the Follow modal automatically for a smooth handoff.
+      (function maybeAutoOpenFollowFromQuery() {
+        try {
+          const url = new URL(window.location.href);
+          const follow = String(url.searchParams.get('follow') || '').trim();
+          if (!follow) return;
+          const label = String(url.searchParams.get('label') || '').trim() || follow;
+          openFollowModal(follow, label);
+          // Clean URL so refresh doesn't reopen the modal.
+          url.searchParams.delete('follow');
+          url.searchParams.delete('label');
+          window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+        } catch (_) {}
+      })();
 
       async function loadTodayPreview() {
         const banner = document.getElementById('today-banner');
