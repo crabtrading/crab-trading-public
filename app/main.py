@@ -2419,6 +2419,33 @@ def _build_seo_page_html(
       </div>
       {body_html}
     </div>
+    <script>
+      (() => {{
+        const utcPattern = /\\b(\\d{{4}})-(\\d{{2}})-(\\d{{2}})\\s+(\\d{{2}}):(\\d{{2}})(?::(\\d{{2}}))?\\s+UTC\\b/g;
+        const toLocal = (y, mo, d, h, mi, s) => {{
+          const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s || "0")));
+          if (Number.isNaN(dt.getTime())) return null;
+          return dt.toLocaleString();
+        }};
+        const convertText = (text) => {{
+          if (!text || !text.includes("UTC")) return text;
+          return text.replace(utcPattern, (_m, y, mo, d, h, mi, s) => {{
+            const localText = toLocal(y, mo, d, h, mi, s);
+            return localText || _m;
+          }});
+        }};
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+        for (const node of textNodes) {{
+          const parentTag = node.parentElement ? node.parentElement.tagName : "";
+          if (parentTag === "SCRIPT" || parentTag === "STYLE") continue;
+          const src = node.nodeValue || "";
+          const next = convertText(src);
+          if (next !== src) node.nodeValue = next;
+        }}
+      }})();
+    </script>
   </body>
 </html>
 """
