@@ -2106,6 +2106,20 @@ def _iso_to_display(value: str) -> str:
     return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _iso_to_chart_date(value: str) -> str:
+    dt = _parse_iso_datetime(value)
+    if dt is None:
+        return ""
+    return dt.strftime("%Y-%m-%d")
+
+
+def _iso_to_chart_time(value: str) -> str:
+    dt = _parse_iso_datetime(value)
+    if dt is None:
+        return ""
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
 def _clip_text(value: str, max_len: int = 160) -> str:
     text = " ".join(str(value or "").split()).strip()
     if len(text) <= max_len:
@@ -2716,7 +2730,30 @@ def _render_equity_curve_html(points: list[dict], realized_gain: float, return_p
         t = (float(v) - y_min) / (y_max - y_min)
         return top_pad + (1.0 - t) * inner_h
 
+    curve_points: list[dict] = []
+    for i, val in enumerate(vals):
+        curve_points.append(
+            {
+                "x": round(sx(i), 4),
+                "y": round(sy(val), 4),
+                "equity": round(float(val), 6),
+                "t": str(points[i].get("t", "")),
+            }
+        )
+
     d = "M " + " ".join(f"{sx(i):.2f},{sy(vals[i]):.2f}" for i in range(len(vals)))
+    curve_payload = html_escape(json.dumps(curve_points, ensure_ascii=False))
+    start_ts_raw = str(points[0].get("t", ""))
+    end_ts_raw = str(points[-1].get("t", ""))
+    start_ts = html_escape(start_ts_raw)
+    end_ts = html_escape(end_ts_raw)
+    start_date_label = html_escape(_iso_to_chart_date(start_ts_raw) or "start")
+    end_date_label = html_escape(_iso_to_chart_date(end_ts_raw) or "latest")
+    latest_point = curve_points[-1]
+    latest_left_pct = max(0.0, min(100.0, (float(latest_point.get("x", 0.0)) / float(w)) * 100.0))
+    latest_top_pct = max(0.0, min(100.0, (float(latest_point.get("y", 0.0)) / float(h)) * 100.0))
+    latest_tip_time = html_escape(_iso_to_chart_time(str(latest_point.get("t", ""))) or "Latest")
+    latest_tip_equity = float(latest_point.get("equity", vals[-1]))
     return f"""
       <div class="curve">
         <div class="curve-head">
@@ -2729,16 +2766,27 @@ def _render_equity_curve_html(points: list[dict], realized_gain: float, return_p
             <div><span class="muted">Return</span> {html_escape(return_pct_text)}</div>
           </div>
         </div>
-        <svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" aria-label="Equity curve">
-          <defs>
-            <linearGradient id="eqg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#4ad7bb" stop-opacity="0.35" />
-              <stop offset="100%" stop-color="#4ad7bb" stop-opacity="0" />
-            </linearGradient>
-          </defs>
-          <path d="{d} L {sx(len(vals)-1):.2f},{h-top_pad:.2f} L {sx(0):.2f},{h-top_pad:.2f} Z" fill="url(#eqg)" />
-          <path d="{d}" fill="none" stroke="#4ad7bb" stroke-width="3" />
-        </svg>
+        <div class="curve-canvas" data-curve-points="{curve_payload}">
+          <svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" aria-label="Equity curve">
+            <defs>
+              <linearGradient id="eqg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#4ad7bb" stop-opacity="0.35" />
+                <stop offset="100%" stop-color="#4ad7bb" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+            <path d="{d} L {sx(len(vals)-1):.2f},{h-top_pad:.2f} L {sx(0):.2f},{h-top_pad:.2f} Z" fill="url(#eqg)" />
+            <path d="{d}" fill="none" stroke="#4ad7bb" stroke-width="3" />
+          </svg>
+          <div class="curve-overlay">
+            <div class="curve-vline" style="left:{latest_left_pct:.4f}%"></div>
+            <div class="curve-dot" style="left:{latest_left_pct:.4f}%; top:{latest_top_pct:.4f}%"></div>
+            <div class="curve-tip">{latest_tip_time} · ${latest_tip_equity:.2f}</div>
+          </div>
+        </div>
+        <div class="curve-xaxis">
+          <span class="curve-x-label" data-curve-ts="{start_ts}">{start_date_label}</span>
+          <span class="curve-x-label" data-curve-ts="{end_ts}">{end_date_label}</span>
+        </div>
         <div class="curve-foot">
           <span class="muted">min</span> ${min(vals):.2f}
           <span class="muted">max</span> ${max(vals):.2f}
@@ -4554,7 +4602,13 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
         .curve-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap: 12px; }}
         .curve-head strong {{ font-size: 18px; }}
         .curve-metrics {{ display:flex; gap: 12px; flex-wrap: wrap; justify-content:flex-end; font-size: 13px; color: #d9e6f8; }}
-        .curve svg {{ width: 100%; height: 210px; margin-top: 10px; border-radius: 10px; background: #0c1118; border: 1px solid #1f2734; }}
+        .curve-canvas {{ position: relative; margin-top: 10px; }}
+        .curve svg {{ width: 100%; height: 210px; border-radius: 10px; background: #0c1118; border: 1px solid #1f2734; }}
+        .curve-overlay {{ position: absolute; inset: 0; cursor: crosshair; }}
+        .curve-vline {{ position:absolute; top:0; bottom:0; width:1px; background: rgba(255, 209, 102, 0.85); box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.2); pointer-events:none; }}
+        .curve-dot {{ position:absolute; width:10px; height:10px; border-radius:999px; background:#4ad7bb; border:2px solid #0c1118; transform:translate(-50%, -50%); pointer-events:none; }}
+        .curve-tip {{ position:absolute; top:8px; left:8px; border:1px solid #3a5576; border-radius:8px; background: rgba(9, 16, 30, 0.92); color:#dce9fb; font-size:11px; line-height:1.25; padding:5px 8px; pointer-events:none; max-width: calc(100% - 16px); }}
+        .curve-xaxis {{ margin-top: 8px; display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; color:#9fb3cf; }}
         .curve-foot {{ display:flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; color: #d9e6f8; }}
         .strategy {{ font-size: 16px; line-height: 1.55; }}
         .strategy .muted {{ font-size: 13px; }}
@@ -4715,6 +4769,93 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
             const mode = String(btn.dataset.followCopy || "agent");
             if (mode === "gpt") return void copy(payloadGpt, "gpt");
             return void copy(payloadAgent, "agent");
+          }});
+
+          function fmtDateTimeLocal(ts) {{
+            if (!ts) return "";
+            const dt = new Date(ts);
+            if (!Number.isFinite(dt.getTime())) return "";
+            return dt.toLocaleString();
+          }}
+
+          function fmtDateLocal(ts) {{
+            if (!ts) return "";
+            const dt = new Date(ts);
+            if (!Number.isFinite(dt.getTime())) return "";
+            return dt.toLocaleDateString();
+          }}
+
+          document.querySelectorAll(".curve-x-label[data-curve-ts]").forEach((el) => {{
+            const ts = String(el.getAttribute("data-curve-ts") || "").trim();
+            const label = fmtDateLocal(ts);
+            if (label) el.textContent = label;
+          }});
+
+          document.querySelectorAll(".curve-canvas[data-curve-points]").forEach((canvas) => {{
+            if (!(canvas instanceof HTMLElement)) return;
+            let points = [];
+            try {{
+              points = JSON.parse(canvas.getAttribute("data-curve-points") || "[]");
+            }} catch (_err) {{
+              points = [];
+            }}
+            if (!Array.isArray(points) || points.length < 2) return;
+            const overlay = canvas.querySelector(".curve-overlay");
+            const line = canvas.querySelector(".curve-vline");
+            const dot = canvas.querySelector(".curve-dot");
+            const tip = canvas.querySelector(".curve-tip");
+            if (!(overlay instanceof HTMLElement) || !(line instanceof HTMLElement) || !(dot instanceof HTMLElement) || !(tip instanceof HTMLElement)) return;
+
+            const applyPoint = (best) => {{
+              if (!best) return;
+              const rect = canvas.getBoundingClientRect();
+              const viewW = 760;
+              const viewH = 220;
+              const px = (Number(best.x || 0) / viewW) * rect.width;
+              const py = (Number(best.y || 0) / viewH) * rect.height;
+              line.style.left = `${{px}}px`;
+              dot.style.left = `${{px}}px`;
+              dot.style.top = `${{py}}px`;
+              const tLabel = fmtDateTimeLocal(best.t) || "Latest";
+              const eq = Number(best.equity || 0);
+              tip.textContent = `${{tLabel}} · $${{eq.toFixed(2)}}`;
+              overlay.hidden = false;
+            }};
+
+            const showAt = (clientX) => {{
+              const rect = canvas.getBoundingClientRect();
+              const localX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+              const viewW = 760;
+              const targetX = (localX / Math.max(1, rect.width)) * viewW;
+              let best = points[0];
+              let bestDist = Math.abs(Number(best.x || 0) - targetX);
+              for (let i = 1; i < points.length; i += 1) {{
+                const candidate = points[i];
+                const dist = Math.abs(Number(candidate.x || 0) - targetX);
+                if (dist < bestDist) {{
+                  best = candidate;
+                  bestDist = dist;
+                }}
+              }}
+              applyPoint(best);
+            }};
+
+            const keepLatest = () => applyPoint(points[points.length - 1]);
+            canvas.addEventListener("mouseenter", (e) => showAt(e.clientX));
+            canvas.addEventListener("mousemove", (e) => showAt(e.clientX));
+            canvas.addEventListener("mouseleave", keepLatest);
+            canvas.addEventListener("touchstart", (e) => {{
+              const t = e.touches && e.touches[0];
+              if (!t) return;
+              showAt(t.clientX);
+            }}, {{ passive: true }});
+            canvas.addEventListener("touchmove", (e) => {{
+              const t = e.touches && e.touches[0];
+              if (!t) return;
+              showAt(t.clientX);
+            }}, {{ passive: true }});
+            canvas.addEventListener("touchend", keepLatest, {{ passive: true }});
+            keepLatest();
           }});
         }})();
       </script>

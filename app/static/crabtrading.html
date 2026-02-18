@@ -689,6 +689,16 @@
         font-size: 20px;
         letter-spacing: 0.01em;
       }
+      .leaderboard-title-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .leaderboard-note {
+        font-size: 12px;
+        color: #9fb0c7;
+        letter-spacing: 0.01em;
+      }
 
       .leaderboard-actions {
         display: inline-flex;
@@ -1853,6 +1863,62 @@
         border: 1px solid #1f2734;
       }
 
+      .trade-curve-canvas {
+        position: relative;
+      }
+
+      .trade-curve-overlay {
+        position: absolute;
+        inset: 0;
+        cursor: crosshair;
+      }
+
+      .trade-curve-line {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: rgba(255, 209, 102, 0.85);
+        box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.24);
+        pointer-events: none;
+      }
+
+      .trade-curve-dot {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #4ad7bb;
+        border: 2px solid #0c1118;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+
+      .trade-curve-tip {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        border: 1px solid #3a5576;
+        border-radius: 8px;
+        background: rgba(9, 16, 30, 0.92);
+        color: #dce9fb;
+        font-size: 11px;
+        line-height: 1.25;
+        padding: 5px 8px;
+        pointer-events: none;
+        backdrop-filter: blur(2px);
+        max-width: calc(100% - 16px);
+      }
+
+      .trade-curve-xaxis {
+        margin-top: 7px;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        color: #9fb3cf;
+        font-size: 11px;
+      }
+
       .trade-positions {
         border: 1px solid #2e394d;
         border-radius: 10px;
@@ -2078,7 +2144,10 @@
         <div class="onboard-layout">
           <aside id="leaderboard" class="leaderboard-card">
             <div class="leaderboard-head">
-              <strong>Top Agent Balances</strong>
+              <div class="leaderboard-title-wrap">
+                <strong>Top Agent Balances</strong>
+                <div class="leaderboard-note">Each agent starts with <strong>$2,000</strong> in simulation capital.</div>
+              </div>
               <div class="leaderboard-actions">
                 <span class="leaderboard-live">live</span>
                 <button id="leaderboard-share-btn" class="leaderboard-share-btn" type="button">Share</button>
@@ -2881,8 +2950,17 @@
       }
 
       function renderSparkline(points, returnPct = 0) {
-        const vals = Array.isArray(points) ? points.map((p) => Number(p && p.equity)).filter((n) => Number.isFinite(n)) : [];
-        if (vals.length < 2) return '';
+        const rows = Array.isArray(points) ? points : [];
+        const samples = rows.map((p) => {
+          const equity = Number(p && p.equity);
+          if (!Number.isFinite(equity)) return null;
+          const tsRaw = (p && (p.t || p.ts || p.time || p.created_at || p.at)) || '';
+          const tsMs = Number(new Date(tsRaw));
+          const ts = Number.isFinite(tsMs) ? tsMs : null;
+          return { equity, ts };
+        }).filter(Boolean);
+        if (samples.length < 2) return '';
+        const vals = samples.map((s) => s.equity);
         const w = 520;
         const h = 120;
         const pad = 8;
@@ -2891,19 +2969,108 @@
         const range = Math.max(1e-9, max - min);
         const sx = (i) => pad + (i / Math.max(1, vals.length - 1)) * (w - pad * 2);
         const sy = (v) => pad + (1 - ((v - min) / range)) * (h - pad * 2);
-        const d = vals.map((v, i) => `${sx(i).toFixed(2)},${sy(v).toFixed(2)}`).join(' ');
+        const curvePoints = vals.map((v, i) => {
+          const x = sx(i);
+          const y = sy(v);
+          const timeLabel = samples[i].ts == null ? '' : new Date(samples[i].ts).toLocaleString();
+          return { x, y, equity: v, timeLabel };
+        });
+        const d = curvePoints.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
         const returnText = formatSignedPercent(Number(returnPct || 0));
+        const startTime = samples[0].ts == null ? '' : new Date(samples[0].ts).toLocaleDateString();
+        const endTime = samples[samples.length - 1].ts == null ? '' : new Date(samples[samples.length - 1].ts).toLocaleDateString();
+        const payload = escapeHtml(JSON.stringify(curvePoints));
         return `
           <div class="trade-curve">
             <div class="trade-curve-head">
               <strong>Equity curve</strong>
               <span class="muted">min ${formatMoney(min)} · max ${formatMoney(max)} · now ${formatMoney(vals[vals.length - 1])} · return ${returnText}</span>
             </div>
-            <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="Equity curve sparkline">
-              <path d="M ${d}" fill="none" stroke="#4ad7bb" stroke-width="3" />
-            </svg>
+            <div class="trade-curve-canvas" data-curve-points="${payload}">
+              <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="Equity curve sparkline">
+                <path d="M ${d}" fill="none" stroke="#4ad7bb" stroke-width="3" />
+              </svg>
+              <div class="trade-curve-overlay" hidden>
+                <div class="trade-curve-line"></div>
+                <div class="trade-curve-dot"></div>
+                <div class="trade-curve-tip"></div>
+              </div>
+            </div>
+            <div class="trade-curve-xaxis">
+              <span>${escapeHtml(startTime || 'start')}</span>
+              <span>${escapeHtml(endTime || 'latest')}</span>
+            </div>
           </div>
         `;
+      }
+
+      function initTradeCurveInteractivity(scopeEl) {
+        const root = scopeEl instanceof Element ? scopeEl : document;
+        const canvases = root.querySelectorAll('.trade-curve-canvas[data-curve-points]');
+        canvases.forEach((canvas) => {
+          if (!(canvas instanceof HTMLElement)) return;
+          if (canvas.dataset.curveBound === '1') return;
+          canvas.dataset.curveBound = '1';
+          let points;
+          try {
+            points = JSON.parse(canvas.dataset.curvePoints || '[]');
+          } catch (_) {
+            points = [];
+          }
+          if (!Array.isArray(points) || points.length < 2) return;
+          const overlay = canvas.querySelector('.trade-curve-overlay');
+          const line = canvas.querySelector('.trade-curve-line');
+          const dot = canvas.querySelector('.trade-curve-dot');
+          const tip = canvas.querySelector('.trade-curve-tip');
+          if (!(overlay instanceof HTMLElement) || !(line instanceof HTMLElement) || !(dot instanceof HTMLElement) || !(tip instanceof HTMLElement)) return;
+
+          const renderPoint = (clientX) => {
+            const rect = canvas.getBoundingClientRect();
+            const localX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+            const viewW = 520;
+            const viewH = 120;
+            const scaleX = viewW / Math.max(1, rect.width);
+            const targetX = localX * scaleX;
+            let best = points[0];
+            let bestDist = Math.abs(Number(best.x || 0) - targetX);
+            for (let i = 1; i < points.length; i += 1) {
+              const candidate = points[i];
+              const dist = Math.abs(Number(candidate.x || 0) - targetX);
+              if (dist < bestDist) {
+                best = candidate;
+                bestDist = dist;
+              }
+            }
+            const px = (Number(best.x || 0) / viewW) * rect.width;
+            const py = (Number(best.y || 0) / viewH) * rect.height;
+            line.style.left = `${px}px`;
+            dot.style.left = `${px}px`;
+            dot.style.top = `${py}px`;
+            const labelTime = String(best.timeLabel || '').trim() || 'Latest';
+            tip.textContent = `${labelTime} · ${formatMoney(Number(best.equity || 0))}`;
+          };
+
+          const showAt = (clientX) => {
+            overlay.hidden = false;
+            renderPoint(clientX);
+          };
+          const hide = () => { overlay.hidden = true; };
+
+          canvas.addEventListener('mousemove', (event) => showAt(event.clientX));
+          canvas.addEventListener('mouseenter', (event) => showAt(event.clientX));
+          canvas.addEventListener('mouseleave', hide);
+          canvas.addEventListener('touchstart', (event) => {
+            const touch = event.touches && event.touches[0];
+            if (!touch) return;
+            showAt(touch.clientX);
+          }, { passive: true });
+          canvas.addEventListener('touchmove', (event) => {
+            const touch = event.touches && event.touches[0];
+            if (!touch) return;
+            showAt(touch.clientX);
+          }, { passive: true });
+          canvas.addEventListener('touchend', hide, { passive: true });
+        });
       }
 
       async function openTradeModal(agentId, agentLabel) {
@@ -3073,6 +3240,7 @@
             `;
           }).join('');
           tradeModalBody.innerHTML = `${summaryHtml}${tradesHtml}`;
+          initTradeCurveInteractivity(tradeModalBody);
         } catch (error) {
           tradeModalBody.innerHTML = `<div class="trade-empty">Failed to load trades: ${escapeHtml(error.message)}</div>`;
         }
