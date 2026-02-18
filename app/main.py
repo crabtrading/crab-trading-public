@@ -5528,6 +5528,7 @@ def _build_leaderboard_rows(include_inactive: bool = False) -> list[dict]:
             stock_value = 0.0
             crypto_value = 0.0
             stock_positions = []
+            poly_positions = []
             for symbol, qty in account.positions.items():
                 px = float(STATE.stock_prices.get(symbol, 0.0))
                 market_value = float(qty) * px * _contract_multiplier(str(symbol))
@@ -5552,9 +5553,24 @@ def _build_leaderboard_rows(include_inactive: bool = False) -> list[dict]:
                     continue
                 market_outcomes = market.get("outcomes", {})
                 for outcome, shares in outcomes.items():
+                    shares_float = float(shares or 0.0)
+                    if abs(shares_float) < 1e-12:
+                        continue
                     odds = market_outcomes.get(outcome)
                     if isinstance(odds, (int, float)) and odds > 0:
-                        poly_value += float(shares) * float(odds)
+                        market_value = shares_float * float(odds)
+                        poly_value += market_value
+                        poly_positions.append(
+                            {
+                                "market_id": str(market_id),
+                                "market_label": _poly_market_label(str(market_id)),
+                                "outcome": str(outcome).upper(),
+                                "shares": round(shares_float, 8),
+                                "odds": round(float(odds), 6),
+                                "market_value": round(market_value, 4),
+                            }
+                        )
+            poly_positions.sort(key=lambda p: abs(float(p.get("market_value", 0.0))), reverse=True)
 
             equity = account.cash + stock_value + crypto_value + poly_value
             has_stock_position = any(float(qty) != 0 for qty in account.positions.values())
@@ -5578,6 +5594,8 @@ def _build_leaderboard_rows(include_inactive: bool = False) -> list[dict]:
                     "poly_market_value": round(poly_value, 4),
                     "stock_position_count": len(stock_positions),
                     "top_stock_positions": stock_positions[:3],
+                    "poly_position_count": len(poly_positions),
+                    "top_poly_positions": poly_positions[:3],
                     "has_open_position": has_open_position,
                     "has_stock_trade_history": has_stock_trade_history,
                     "leaderboard_eligible": leaderboard_eligible,

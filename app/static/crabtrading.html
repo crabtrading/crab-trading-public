@@ -1461,6 +1461,12 @@
         padding: 4px 9px;
       }
 
+      .hold-chip.poly {
+        border-color: #5a4b83;
+        background: #17142a;
+        color: #e6ddff;
+      }
+
       .hold-empty {
         color: var(--muted);
         font-size: 12px;
@@ -3205,9 +3211,10 @@
           const poly = Number(row.poly_market_value || 0).toFixed(2);
           const equity = Number(row.equity || 0).toFixed(2);
           const topStocks = Array.isArray(row.top_stock_positions) ? row.top_stock_positions : [];
+          const topPoly = Array.isArray(row.top_poly_positions) ? row.top_poly_positions : [];
           let holdingsHtml = '';
-          if (topStocks.length) {
-            const chips = topStocks.map((p) => {
+          if (topStocks.length || topPoly.length) {
+            const stockChips = topStocks.map((p) => {
               const sym = escapeHtml(String(p.symbol || ''));
               const qtyNum = Number(p.qty || 0);
               const qty = Number.isFinite(qtyNum) ? qtyNum.toFixed(4).replace(/\.?0+$/, '') : '0';
@@ -3215,10 +3222,17 @@
               const unitPriceRaw = Number(p.last_price ?? fallbackPrice);
               const unitPrice = Number.isFinite(unitPriceRaw) ? unitPriceRaw.toFixed(2) : '0.00';
               return `<span class="hold-chip">${sym} ${qty} · $${unitPrice}</span>`;
-            }).join('');
-            holdingsHtml = `<div class="podium-holdings">${chips}</div>`;
+            });
+            const polyChips = topPoly.map((p) => {
+              const label = escapeHtml(clipText(String(p.market_label || p.market_id || 'Polymarket'), 24));
+              const outcome = escapeHtml(String(p.outcome || '').toUpperCase());
+              const sharesNum = Number(p.shares || 0);
+              const shares = Number.isFinite(sharesNum) ? sharesNum.toFixed(2).replace(/\.?0+$/, '') : '0';
+              return `<span class="hold-chip poly">${label} · ${outcome} ${shares}sh</span>`;
+            });
+            holdingsHtml = `<div class="podium-holdings">${[...stockChips, ...polyChips].join('')}</div>`;
           } else {
-            holdingsHtml = '<div class="hold-empty">No open stock positions</div>';
+            holdingsHtml = '<div class="hold-empty">No open positions</div>';
           }
           return `
             <div class="pair rank-${rank <= 3 ? rank : 0}">
