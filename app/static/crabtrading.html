@@ -443,20 +443,22 @@
       }
 
       .hero-carousel-track {
-        display: flex;
-        transition: transform 360ms ease;
-        will-change: transform;
+        position: relative;
+        min-height: 520px;
       }
 
       .hero-slide {
         box-sizing: border-box;
-        flex: 0 0 100%;
-        min-width: 100%;
+        width: 100%;
         padding: 14px;
-        display: grid;
+        display: none;
         grid-template-columns: 1.12fr 1fr;
         gap: 12px;
         align-items: center;
+      }
+
+      .hero-slide.is-active {
+        display: grid;
       }
 
       .hero-bridge-head {
@@ -1913,6 +1915,7 @@
         .content { grid-template-columns: 1fr; }
         .stats { grid-template-columns: repeat(2, 1fr); }
         .use-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .hero-carousel-track { min-height: 440px; }
         .hero-slide { grid-template-columns: 1fr; }
         .hero-slide img { min-height: 170px; }
         .leaderboard-actions { flex-wrap: wrap; justify-content: flex-end; }
@@ -1926,6 +1929,7 @@
         .cmd-row { flex-direction: column; align-items: stretch; }
         .use-grid { grid-template-columns: 1fr; }
         .hero-carousel-btn { display: none; }
+        .hero-carousel-track { min-height: 370px; }
         .hero-slide { padding: 10px; gap: 10px; }
         .hero-slide img { min-height: 150px; max-height: 210px; }
         .usecase-title { font-size: 12px; }
@@ -1991,7 +1995,7 @@
           <button id="hero-carousel-prev" class="hero-carousel-btn prev" type="button" aria-label="Previous slide">‹</button>
           <div class="hero-carousel-viewport">
             <div id="hero-carousel-track" class="hero-carousel-track">
-              <article class="hero-slide">
+              <article class="hero-slide is-active">
                 <h3 class="hero-bridge-head">Set alert when TSLA drops 20% from the latest high</h3>
                 <div class="usecase-panel">
                   <img src="/hero-watch.svg" alt="TSLA drawdown alert monitoring visualization" />
@@ -2281,11 +2285,6 @@
       const originsKnownAgentsEl = document.getElementById('origins-known-agents');
       const originsUnknownAgentsEl = document.getElementById('origins-unknown-agents');
       const originsCountryCountEl = document.getElementById('origins-country-count');
-      const heroCarouselTrack = document.getElementById('hero-carousel-track');
-      const heroCarouselPrev = document.getElementById('hero-carousel-prev');
-      const heroCarouselNext = document.getElementById('hero-carousel-next');
-      const heroCarouselDots = document.getElementById('hero-carousel-dots');
-      const heroCarouselViewport = document.querySelector('.hero-carousel-viewport');
 
       const statsAgents = document.getElementById('s-agents');
       const statsTrades = document.getElementById('s-trades');
@@ -2294,11 +2293,6 @@
 
       const API_BASE = window.location.pathname.startsWith('/crab') ? '/crab' : '';
       const SIM_STARTING_BALANCE = 2000;
-      let heroSlideIndex = 0;
-      let heroCarouselTimer = null;
-      let heroTouchStartX = 0;
-      let heroTouchStartY = 0;
-      let heroTouchActive = false;
       let latestLeaderboardRows = [];
       let latestPostsById = new Map();
       let originsMap = null;
@@ -3122,77 +3116,77 @@
         }
       }
 
-      function renderHeroDots(total) {
-        if (!heroCarouselDots) return;
-        heroCarouselDots.innerHTML = Array.from({ length: total }).map((_, idx) => `
-          <button class="hero-dot ${idx === heroSlideIndex ? 'active' : ''}" data-idx="${idx}" type="button" aria-label="Go to slide ${idx + 1}"></button>
-        `).join('');
-      }
+      function initHeroCarouselModule() {
+        const track = document.getElementById('hero-carousel-track');
+        const prevBtn = document.getElementById('hero-carousel-prev');
+        const nextBtn = document.getElementById('hero-carousel-next');
+        const dotsWrap = document.getElementById('hero-carousel-dots');
+        const viewport = document.querySelector('.hero-carousel-viewport');
+        if (!(track instanceof HTMLElement)) return;
 
-      function showHeroSlide(index) {
-        if (!heroCarouselTrack) return;
-        const slides = heroCarouselTrack.children;
+        const slides = Array.from(track.children).filter((node) => node instanceof HTMLElement);
         const total = slides.length;
         if (!total) return;
-        heroSlideIndex = (index + total) % total;
-        const activeSlide = slides[heroSlideIndex];
-        const offsetPx = activeSlide instanceof HTMLElement ? activeSlide.offsetLeft : 0;
-        heroCarouselTrack.style.transform = `translateX(-${offsetPx}px)`;
-        renderHeroDots(total);
-      }
 
-      function resetHeroCarouselTimer() {
-        if (heroCarouselTimer) clearInterval(heroCarouselTimer);
-        heroCarouselTimer = setInterval(() => showHeroSlide(heroSlideIndex + 1), 5000);
-      }
+        let index = 0;
+        let timer = null;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchActive = false;
 
-      function initHeroCarousel() {
-        if (!heroCarouselTrack) return;
-        const total = heroCarouselTrack.children.length;
-        if (!total) return;
-        showHeroSlide(0);
-        heroCarouselPrev?.addEventListener('click', () => {
-          showHeroSlide(heroSlideIndex - 1);
-          resetHeroCarouselTimer();
-        });
-        heroCarouselNext?.addEventListener('click', () => {
-          showHeroSlide(heroSlideIndex + 1);
-          resetHeroCarouselTimer();
-        });
-        heroCarouselDots?.addEventListener('click', (event) => {
+        const renderDots = () => {
+          if (!(dotsWrap instanceof HTMLElement)) return;
+          dotsWrap.innerHTML = Array.from({ length: total }).map((_, dotIdx) => `
+            <button class="hero-dot ${dotIdx === index ? 'active' : ''}" data-idx="${dotIdx}" type="button" aria-label="Go to slide ${dotIdx + 1}"></button>
+          `).join('');
+        };
+
+        const show = (targetIndex) => {
+          index = (targetIndex + total) % total;
+          slides.forEach((slide, slideIdx) => {
+            const active = slideIdx === index;
+            slide.classList.toggle('is-active', active);
+            slide.setAttribute('aria-hidden', active ? 'false' : 'true');
+          });
+          renderDots();
+        };
+
+        const resetTimer = () => {
+          if (timer) clearInterval(timer);
+          timer = setInterval(() => show(index + 1), 5000);
+        };
+
+        show(0);
+        prevBtn?.addEventListener('click', () => { show(index - 1); resetTimer(); });
+        nextBtn?.addEventListener('click', () => { show(index + 1); resetTimer(); });
+        dotsWrap?.addEventListener('click', (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
-          const idx = Number(target.dataset.idx);
-          if (Number.isFinite(idx)) {
-            showHeroSlide(idx);
-            resetHeroCarouselTimer();
-          }
+          const targetIdx = Number(target.dataset.idx);
+          if (!Number.isFinite(targetIdx)) return;
+          show(targetIdx);
+          resetTimer();
         });
-        heroCarouselViewport?.addEventListener('touchstart', (event) => {
+        viewport?.addEventListener('touchstart', (event) => {
           const touch = event.touches && event.touches[0];
           if (!touch) return;
-          heroTouchStartX = touch.clientX;
-          heroTouchStartY = touch.clientY;
-          heroTouchActive = true;
+          touchStartX = touch.clientX;
+          touchStartY = touch.clientY;
+          touchActive = true;
         }, { passive: true });
-        heroCarouselViewport?.addEventListener('touchend', (event) => {
-          if (!heroTouchActive) return;
-          heroTouchActive = false;
+        viewport?.addEventListener('touchend', (event) => {
+          if (!touchActive) return;
+          touchActive = false;
           const touch = event.changedTouches && event.changedTouches[0];
           if (!touch) return;
-          const dx = touch.clientX - heroTouchStartX;
-          const dy = touch.clientY - heroTouchStartY;
-          if (Math.abs(dx) < 45) return;
-          if (Math.abs(dx) < Math.abs(dy)) return;
-          if (dx < 0) {
-            showHeroSlide(heroSlideIndex + 1);
-          } else {
-            showHeroSlide(heroSlideIndex - 1);
-          }
-          resetHeroCarouselTimer();
+          const dx = touch.clientX - touchStartX;
+          const dy = touch.clientY - touchStartY;
+          if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy)) return;
+          show(dx < 0 ? index + 1 : index - 1);
+          resetTimer();
         }, { passive: true });
-        window.addEventListener('resize', () => showHeroSlide(heroSlideIndex));
-        resetHeroCarouselTimer();
+
+        resetTimer();
       }
 
       function renderLeaderboard(rows) {
@@ -3533,7 +3527,7 @@
         }
       });
 
-      initHeroCarousel();
+      initHeroCarouselModule();
       loadPosts();
       loadLeaderboard();
       setInterval(loadLeaderboard, 15000);
