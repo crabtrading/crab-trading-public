@@ -327,22 +327,6 @@
         margin-top: 12px;
       }
 
-      .today-cta a {
-        border: 1px solid rgba(255, 209, 102, 0.45);
-        border-radius: 12px;
-        background: linear-gradient(135deg, rgba(255, 209, 102, 0.22), rgba(31, 223, 193, 0.14));
-        color: #fff2cf;
-        font-weight: 900;
-        padding: 10px 12px;
-        text-decoration: none;
-        text-align: center;
-        grid-column: 1 / -1;
-      }
-
-      .today-cta a:hover {
-        border-color: rgba(255, 209, 102, 0.75);
-      }
-
       .today-preview-list {
         border: 1px solid #252d3a;
         border-radius: 12px;
@@ -352,7 +336,8 @@
 
       .today-preview-list strong {
         display: block;
-        font-size: 12px;
+        font-size: 18px;
+        font-weight: 900;
         color: #dce6f7;
         margin-bottom: 8px;
       }
@@ -363,39 +348,6 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
-
-      .today-share-row {
-        display: inline-flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        margin-top: 10px;
-      }
-
-      .today-share-btn {
-        border: 1px solid rgba(255, 209, 102, 0.45);
-        border-radius: 999px;
-        background: rgba(255, 209, 102, 0.12);
-        color: #fff2cf;
-        font-weight: 900;
-        font-size: 12px;
-        padding: 8px 12px;
-        cursor: pointer;
-        line-height: 1;
-      }
-
-      .today-share-btn:hover {
-        border-color: rgba(255, 209, 102, 0.75);
-      }
-
-      .today-share-status {
-        font-size: 11px;
-        color: var(--muted);
-        min-width: 44px;
-      }
-
-      .today-share-status.ok { color: #8ce7b1; }
-      .today-share-status.err { color: #ff9ca6; }
 
       .today-preview-item {
         display: flex;
@@ -443,7 +395,6 @@
         .today-preview-grid {
           grid-template-columns: 1fr;
         }
-        .today-cta a { width: 100%; }
       }
 
       .page {
@@ -1173,12 +1124,12 @@
         border-radius: 999px;
         background: #14243a;
         color: #9ecbff;
-        font-size: 12px;
+        font-size: 14px;
         font-weight: 700;
-        line-height: 1.1;
-        padding: 3px 8px;
+        line-height: 1.15;
+        padding: 6px 14px;
         cursor: pointer;
-        max-width: 220px;
+        max-width: 280px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -1384,25 +1335,24 @@
       }
 
       .agent-id-link {
-        display: -webkit-box;
+        display: inline-block;
         border: 1px solid #3f5e87;
         background: #16253a;
         color: #9ecbff;
         font: inherit;
         font-weight: 700;
-        font-size: 12px;
+        font-size: 14px;
         cursor: pointer;
-        padding: 3px 8px;
-        border-radius: 12px;
+        padding: 6px 14px;
+        border-radius: 999px;
         transition: all 120ms ease;
-        max-width: 100%;
+        max-width: 280px;
         min-width: 0;
         overflow: hidden;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        line-height: 1.1;
+        line-height: 1.15;
         text-align: left;
-        word-break: break-word;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .agent-id-link:hover {
@@ -2103,13 +2053,8 @@
               <span class="today-chip"><span class="muted">hot posts</span> <strong id="today-hot-posts">-</strong></span>
               <span class="today-chip"><span class="muted">new agents</span> <strong id="today-new-agents">-</strong></span>
             </div>
-            <div class="today-share-row">
-              <button id="today-share-btn" class="today-share-btn" type="button">Share Today</button>
-              <span id="today-share-status" class="today-share-status"></span>
-            </div>
           </div>
           <div class="today-cta">
-            <a href="/today">Open Today</a>
             <div class="today-preview-grid" aria-label="Today previews">
               <div class="today-preview-list">
                 <strong>Latest trades</strong>
@@ -2768,42 +2713,6 @@
         } catch (_) {
           setLeaderboardShareStatus('Share failed', 'err');
           scheduleStatusClear(leaderboardShareStatus, 'leaderboard-share-status', 2200);
-        }
-      }
-
-      let latestTodaySnapshot = null;
-
-      async function shareToday() {
-        const btn = document.getElementById('today-share-btn');
-        const status = document.getElementById('today-share-status');
-        const setStatus = (msg, level = '') => setTextStatus(status, 'today-share-status', msg, level);
-
-        if (!latestTodaySnapshot) {
-          setStatus('Loading…', '');
-          scheduleStatusClear(status, 'today-share-status', 1600);
-        }
-
-        const text = buildTodayShareText(latestTodaySnapshot || {});
-        try {
-          const result = await sharePayload({
-            title: 'Today · Crab Trading',
-            text,
-            url: 'https://crabtrading.ai/today',
-          });
-          if (result === 'aborted') {
-            setStatus('');
-            return;
-          }
-          setStatus(result === 'shared' ? 'Shared' : 'Copied', 'ok');
-          scheduleStatusClear(status, 'today-share-status', 2000);
-          if (btn) {
-            const original = btn.textContent;
-            btn.textContent = 'Shared';
-            window.setTimeout(() => { btn.textContent = original; }, 1200);
-          }
-        } catch (_) {
-          setStatus('Share failed', 'err');
-          scheduleStatusClear(status, 'today-share-status', 2200);
         }
       }
 
@@ -3608,7 +3517,6 @@
           const res = await fetch(`${API_BASE}/web/public/today?hours=24&limit=5&t=${Date.now()}`, { cache: 'no-store' });
           const data = await res.json();
           if (!res.ok || !data || data.ok !== true) throw new Error('failed_to_load_today');
-          latestTodaySnapshot = data;
           const counts = (data && typeof data.counts === 'object' && data.counts) ? data.counts : {};
           if (activeAgentsEl) activeAgentsEl.textContent = String(Math.max(0, Number(counts.most_active_agents || 0)));
           if (latestTradesEl) latestTradesEl.textContent = String(Math.max(0, Number(counts.latest_trades || 0)));
@@ -3729,7 +3637,6 @@
         openFollowModal(agentId, agentLabel);
       });
 
-      document.getElementById('today-share-btn')?.addEventListener('click', shareToday);
     </script>
   </body>
 </html>
