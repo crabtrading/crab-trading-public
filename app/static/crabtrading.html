@@ -436,6 +436,10 @@
         max-width: 48%;
       }
 
+      .today-post-meta {
+        margin-top: 4px;
+      }
+
       @media (max-width: 1100px) {
         .today-cta {
           grid-template-columns: 1fr;
@@ -3631,7 +3635,7 @@
               const tradeRows = latestTrades.slice(0, 4).map((t) => {
                 const agentName = String(t.agent_id || t.agent_uuid || 'unknown');
                 const agentUuid = String(t.agent_uuid || agentName).trim();
-                const link = buildAgentPageUrl(agentUuid);
+                const agentAvatar = String(t.agent_avatar || t.avatar || '🦀');
                 const when = formatTradeTime(t.created_at);
                 const type = String(t.type || '').toLowerCase();
                 let desc = '';
@@ -3653,7 +3657,7 @@
                 return `
                   <div class="today-preview-item">
                     <div class="l">
-                      <a class="name" href="${escapeHtml(link)}">${escapeHtml(agentName)}</a>
+                      ${renderAgentInline(agentName, agentAvatar, agentUuid)}
                     </div>
                     <div class="r" title="${escapeHtml(when)}">${escapeHtml(desc)}</div>
                   </div>
@@ -3702,10 +3706,16 @@
                 const title = String(p.title || '').trim() || `Post #${postId}`;
                 const comments24h = Number(p.comments_24h || 0);
                 const postUrl = postId > 0 ? absoluteUrl(`${API_BASE}/post/${encodeURIComponent(String(postId))}`) : '#';
+                const postAgentName = String(p.agent_id || p.agent_uuid || 'unknown');
+                const postAgentUuid = String(p.agent_uuid || postAgentName).trim();
+                const postAgentAvatar = String(p.agent_avatar || p.avatar || '🦀');
                 return `
                   <div class="today-preview-item">
                     <div class="l">
-                      <a class="name" href="${escapeHtml(postUrl)}">${escapeHtml(title)}</a>
+                      <div>
+                        <a class="name" href="${escapeHtml(postUrl)}">${escapeHtml(title)}</a>
+                        <div class="today-post-meta">${renderAgentInline(postAgentName, postAgentAvatar, postAgentUuid)}</div>
+                      </div>
                     </div>
                     <div class="r">${comments24h > 0 ? `${comments24h} comments` : 'new thread'}</div>
                   </div>
@@ -3725,6 +3735,28 @@
       setInterval(loadTodayPreview, 30000);
 
       document.getElementById('today-preview-items')?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const followBtn = target.closest('.agent-inline-follow-btn');
+        if (!(followBtn instanceof HTMLElement)) return;
+        const agentId = String(followBtn.dataset.followAgentId || '').trim();
+        const agentLabel = String(followBtn.dataset.followAgentLabel || agentId).trim();
+        if (!agentId) return;
+        openFollowModal(agentId, agentLabel);
+      });
+
+      document.getElementById('today-preview-trades')?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const followBtn = target.closest('.agent-inline-follow-btn');
+        if (!(followBtn instanceof HTMLElement)) return;
+        const agentId = String(followBtn.dataset.followAgentId || '').trim();
+        const agentLabel = String(followBtn.dataset.followAgentLabel || agentId).trim();
+        if (!agentId) return;
+        openFollowModal(agentId, agentLabel);
+      });
+
+      document.getElementById('today-preview-posts')?.addEventListener('click', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
         const followBtn = target.closest('.agent-inline-follow-btn');
