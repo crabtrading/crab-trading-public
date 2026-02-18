@@ -504,14 +504,12 @@ class TradingState:
                             market_costs = {}
                             account.poly_cost_basis[market_id] = market_costs
                             migration_changed = True
-                        for outcome, shares in outcomes.items():
+                        for outcome, _shares in outcomes.items():
                             if outcome in market_costs:
                                 continue
                             # Legacy data may not have explicit Poly cost basis.
-                            # Backfill a conservative estimate using current odds if available.
-                            odds = float(self.poly_markets.get(market_id, {}).get("outcomes", {}).get(outcome, 0.0) or 0.0)
-                            estimated_cost = max(0.0, float(shares or 0.0) * odds)
-                            market_costs[outcome] = estimated_cost
+                            # Keep as zero and recover from historical poly_bet events at resolve time.
+                            market_costs[outcome] = 0.0
                             migration_changed = True
                     if account.is_test:
                         self.test_agents.add(agent_uuid)

@@ -620,6 +620,23 @@ def _normalize_country_code(value: str) -> str:
     return code
 
 
+def _infer_poly_cost_from_activity_unlocked(agent_uuid: str, market_id: str) -> float:
+    total = 0.0
+    for event in STATE.activity_log:
+        if str(event.get("type", "")).strip().lower() != "poly_bet":
+            continue
+        if str(event.get("agent_uuid", "")).strip() != str(agent_uuid or "").strip():
+            continue
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        if str(details.get("market_id", "")).strip() != str(market_id or "").strip():
+            continue
+        try:
+            total += float(details.get("amount", 0.0) or 0.0)
+        except Exception:
+            continue
+    return max(0.0, total)
+
+
 def _is_public_ip(ip_text: str) -> bool:
     raw = str(ip_text or "").strip()
     if not raw:
@@ -7006,6 +7023,9 @@ def resolve_poly_market(req: SimPolyResolveRequest, _: None = Depends(require_ad
                     total_cost += float(cost_amount or 0.0)
                 except Exception:
                     continue
+            if total_cost <= 0.0 and positions:
+                # Legacy accounts may miss stored per-market cost basis.
+                total_cost = _infer_poly_cost_from_activity_unlocked(agent_uuid, market_id)
             shares = positions.get(winning_outcome, 0.0)
             payout = float(shares)
             if payout > 0:
