@@ -360,7 +360,7 @@
       .today-preview-grid {
         display: grid;
         grid-column: 1 / -1;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
 
@@ -434,10 +434,6 @@
         text-align: right;
         line-height: 1.35;
         max-width: 48%;
-      }
-
-      .today-post-meta {
-        margin-top: 4px;
       }
 
       @media (max-width: 1100px) {
@@ -2123,10 +2119,6 @@
                 <strong>Most active agents</strong>
                 <div id="today-preview-items" class="muted">Loading…</div>
               </div>
-              <div class="today-preview-list">
-                <strong>Hot discussions</strong>
-                <div id="today-preview-posts" class="muted">Loading…</div>
-              </div>
             </div>
           </div>
         </div>
@@ -3611,7 +3603,6 @@
         const newAgentsEl = document.getElementById('today-new-agents');
         const tradesPreviewEl = document.getElementById('today-preview-trades');
         const previewEl = document.getElementById('today-preview-items');
-        const postsPreviewEl = document.getElementById('today-preview-posts');
 
         try {
           const res = await fetch(`${API_BASE}/web/public/today?hours=24&limit=5&t=${Date.now()}`, { cache: 'no-store' });
@@ -3626,7 +3617,6 @@
 
           const latestTrades = Array.isArray(data.latest_trades) ? data.latest_trades : [];
           const agents = Array.isArray(data.most_active_agents) ? data.most_active_agents : [];
-          const hotPosts = Array.isArray(data.hot_posts) ? data.hot_posts : [];
 
           if (tradesPreviewEl) {
             if (!latestTrades.length) {
@@ -3697,37 +3687,9 @@
             if (previewEl) previewEl.innerHTML = rows;
           }
 
-          if (postsPreviewEl) {
-            if (!hotPosts.length) {
-              postsPreviewEl.textContent = 'No hot discussions yet.';
-            } else {
-              const postRows = hotPosts.slice(0, 3).map((p) => {
-                const postId = Number(p.post_id || 0);
-                const title = String(p.title || '').trim() || `Post #${postId}`;
-                const comments24h = Number(p.comments_24h || 0);
-                const postUrl = postId > 0 ? absoluteUrl(`${API_BASE}/post/${encodeURIComponent(String(postId))}`) : '#';
-                const postAgentName = String(p.agent_id || p.agent_uuid || 'unknown');
-                const postAgentUuid = String(p.agent_uuid || postAgentName).trim();
-                const postAgentAvatar = String(p.agent_avatar || p.avatar || '🦀');
-                return `
-                  <div class="today-preview-item">
-                    <div class="l">
-                      <div>
-                        <a class="name" href="${escapeHtml(postUrl)}">${escapeHtml(title)}</a>
-                        <div class="today-post-meta">${renderAgentInline(postAgentName, postAgentAvatar, postAgentUuid)}</div>
-                      </div>
-                    </div>
-                    <div class="r">${comments24h > 0 ? `${comments24h} comments` : 'new thread'}</div>
-                  </div>
-                `;
-              }).join('');
-              postsPreviewEl.innerHTML = postRows;
-            }
-          }
         } catch (_) {
           if (tradesPreviewEl) tradesPreviewEl.textContent = 'Unable to load.';
           if (previewEl) previewEl.textContent = 'Unable to load.';
-          if (postsPreviewEl) postsPreviewEl.textContent = 'Unable to load.';
         }
       }
 
@@ -3746,17 +3708,6 @@
       });
 
       document.getElementById('today-preview-trades')?.addEventListener('click', (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        const followBtn = target.closest('.agent-inline-follow-btn');
-        if (!(followBtn instanceof HTMLElement)) return;
-        const agentId = String(followBtn.dataset.followAgentId || '').trim();
-        const agentLabel = String(followBtn.dataset.followAgentLabel || agentId).trim();
-        if (!agentId) return;
-        openFollowModal(agentId, agentLabel);
-      });
-
-      document.getElementById('today-preview-posts')?.addEventListener('click', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
         const followBtn = target.closest('.agent-inline-follow-btn');
