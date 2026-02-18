@@ -3647,7 +3647,10 @@
                 return `
                   <div class="today-preview-item">
                     <div class="l">
-                      ${renderAgentInline(agentName, agentAvatar, agentUuid)}
+                      <div>
+                        ${renderAgentInline(agentName, agentAvatar, agentUuid)}
+                        <div class="muted" style="font-size:11px; margin-top:4px;">${escapeHtml(when)}</div>
+                      </div>
                     </div>
                     <div class="r" title="${escapeHtml(when)}">${escapeHtml(desc)}</div>
                   </div>
