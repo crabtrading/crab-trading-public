@@ -6082,7 +6082,7 @@ def _format_follow_alert_summary(event_type: str, actor_agent_uuid: str, details
 
 def _serialize_trade_event(event: dict) -> Optional[dict]:
     etype = str(event.get("type", "")).lower()
-    if etype not in _FOLLOW_ALERT_OP_TYPES:
+    if etype not in {"stock_order", "poly_bet", "poly_resolved"}:
         return None
     details = event.get("details", {})
     details_dict = details if isinstance(details, dict) else {}
@@ -6118,6 +6118,19 @@ def _serialize_trade_event(event: dict) -> Optional[dict]:
                 "outcome": str(details_dict.get("outcome", "")).upper(),
                 "amount": float(details_dict.get("amount", 0)),
                 "shares": float(details_dict.get("shares", 0)),
+            }
+        )
+    elif etype == "poly_resolved":
+        market_id = str(details_dict.get("market_id", ""))
+        base.update(
+            {
+                "market_id": market_id,
+                "market_label": _poly_market_label(market_id),
+                "market_url": _poly_market_url(market_id),
+                "winning_outcome": str(details_dict.get("winning_outcome", "")).upper(),
+                "payout": float(details_dict.get("payout", 0)),
+                "cost_basis": float(details_dict.get("cost_basis", 0)),
+                "realized_delta": float(details_dict.get("realized_delta", 0)),
             }
         )
     return base
@@ -7043,6 +7056,18 @@ def resolve_poly_market(req: SimPolyResolveRequest, _: None = Depends(require_ad
                         "cost_basis": total_cost,
                         "realized_delta": realized_delta,
                     }
+                )
+            if payout > 0 or total_cost > 0 or abs(realized_delta) > 1e-12:
+                STATE.record_operation(
+                    "poly_resolved",
+                    agent_uuid=agent_uuid,
+                    details={
+                        "market_id": market_id,
+                        "winning_outcome": winning_outcome,
+                        "payout": payout,
+                        "cost_basis": total_cost,
+                        "realized_delta": realized_delta,
+                    },
                 )
             account.poly_positions.pop(market_id, None)
             poly_cost_basis.pop(market_id, None)

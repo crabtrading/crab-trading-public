@@ -1772,6 +1772,11 @@
         background: #18162a;
       }
 
+      .trade-row.poly_resolved {
+        border-color: #2f6d59;
+        background: #12261f;
+      }
+
       .trade-row-top {
         display: flex;
         justify-content: space-between;
@@ -2840,6 +2845,12 @@
           lines.push(`BET $${amount} on ${outcome} · ${marketLabel}`);
           const marketUrl = buildPolymarketUrl(trade);
           if (marketUrl) lines.push(`Market: ${marketUrl}`);
+        } else if (trade.type === 'poly_resolved') {
+          const marketLabel = String(trade.market_label || trade.market_title || trade.market_question || trade.market_id || '');
+          const pnl = Number(trade.realized_delta || 0).toFixed(2);
+          const payout = Number(trade.payout || 0).toFixed(2);
+          const cost = Number(trade.cost_basis || 0).toFixed(2);
+          lines.push(`RESOLVED ${marketLabel} · PnL $${pnl} (payout $${payout} - cost $${cost})`);
         }
         if (imageUrl) lines.push(`Card: ${imageUrl}`);
         return lines.join('\n');
@@ -3056,6 +3067,32 @@
                 <div class="trade-row poly_bet">
                   <div class="trade-row-top"><span>POLYMARKET</span><span>${escapeHtml(time)}</span></div>
                   <div class="trade-row-main">BET $${amount} on ${outcome} · <span class="trade-market-label" title="${marketLabelTitle}">${marketLabelShort}</span> · shares ${shares}</div>
+                  ${actionHtml}
+                </div>
+              `;
+            }
+            if (type === 'poly_resolved') {
+              const marketLabelRaw = String(t.market_label || t.market_title || t.market_question || t.market_id || 'Polymarket market').trim();
+              const marketLabelShort = escapeHtml(clipText(marketLabelRaw, 96));
+              const marketLabelTitle = escapeHtml(marketLabelRaw);
+              const marketUrl = String(buildPolymarketUrl(t) || '').trim();
+              const marketUrlEscaped = escapeHtml(marketUrl);
+              const actionHtml = `
+                <div class="trade-row-actions">
+                  <button class="trade-share-btn" type="button" data-trade-action="x" data-share-text="${shareTextEscaped}" data-share-url="${shareUrlEscaped}">Share X</button>
+                  ${marketUrl ? `<a class="trade-share-btn" href="${marketUrlEscaped}" target="_blank" rel="noopener noreferrer">Open Market</a>` : ''}
+                </div>
+              `;
+              const outcome = escapeHtml(String(t.winning_outcome || '').toUpperCase());
+              const payout = Number(t.payout || 0).toFixed(2);
+              const cost = Number(t.cost_basis || 0).toFixed(2);
+              const pnlNum = Number(t.realized_delta || 0);
+              const pnl = Math.abs(pnlNum).toFixed(2);
+              const pnlLabel = pnlNum >= 0 ? `+${pnl}` : `-${pnl}`;
+              return `
+                <div class="trade-row poly_resolved">
+                  <div class="trade-row-top"><span>POLY RESOLVED</span><span>${escapeHtml(time)}</span></div>
+                  <div class="trade-row-main"><span class="trade-market-label" title="${marketLabelTitle}">${marketLabelShort}</span> · winner ${outcome} · PnL ${pnlLabel} (payout $${payout} - cost $${cost})</div>
                   ${actionHtml}
                 </div>
               `;
