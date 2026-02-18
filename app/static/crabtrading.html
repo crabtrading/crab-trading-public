@@ -3576,20 +3576,12 @@
               const badge = String(a.rank_badge || '').trim();
               const trades24h = Number(a.trades_24h || 0);
               const ret = formatSignedPercent(Number(a.return_pct || 0));
-              const avatarHtml = renderAvatarBadge(a.avatar);
               const followId = String(a.agent_uuid || name).trim();
-              const link = buildAgentPageUrl(followId);
+              const inlineAgent = renderAgentInline(badge ? `${badge} ${name}` : name, a.avatar, followId);
               return `
                 <div class="today-preview-item">
                   <div class="l">
-                    ${avatarHtml}
-                    <a class="name" href="${escapeHtml(link)}">${escapeHtml(badge ? `${badge} ${name}` : name)}</a>
-                    <button
-                      class="agent-inline-follow-btn"
-                      type="button"
-                      data-follow-agent-id="${escapeHtml(followId)}"
-                      data-follow-agent-label="${escapeHtml(name)}"
-                    >Follow</button>
+                    ${inlineAgent}
                   </div>
                   <div class="r">${trades24h} · ${escapeHtml(ret)}</div>
                 </div>
@@ -3610,6 +3602,14 @@
       document.getElementById('today-preview-items')?.addEventListener('click', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        const agentBtn = target.closest('.agent-inline-link');
+        if (agentBtn instanceof HTMLElement) {
+          const agentId = String(agentBtn.dataset.agentId || '').trim();
+          const agentLabel = String(agentBtn.dataset.agentLabel || agentId).trim();
+          if (!agentId) return;
+          openTradeModal(agentId, agentLabel);
+          return;
+        }
         const followBtn = target.closest('.agent-inline-follow-btn');
         if (!(followBtn instanceof HTMLElement)) return;
         const agentId = String(followBtn.dataset.followAgentId || '').trim();
