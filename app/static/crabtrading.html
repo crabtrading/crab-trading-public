@@ -359,6 +359,8 @@
 
       .today-preview-grid {
         display: grid;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 10px;
       }
 
@@ -436,6 +438,9 @@
 
       @media (max-width: 1100px) {
         .today-cta {
+          grid-template-columns: 1fr;
+        }
+        .today-preview-grid {
           grid-template-columns: 1fr;
         }
         .today-cta a { width: 100%; }
