@@ -3092,7 +3092,8 @@
         const total = slides.length;
         if (!total) return;
         heroSlideIndex = (index + total) % total;
-        heroCarouselTrack.style.transform = `translateX(-${heroSlideIndex * 100}%)`;
+        const offsetPct = (heroSlideIndex * 100) / total;
+        heroCarouselTrack.style.transform = `translateX(-${offsetPct}%)`;
         renderHeroDots(total);
       }
 
