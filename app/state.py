@@ -48,6 +48,7 @@ class AgentAccount:
     avg_cost: Dict[str, float] = field(default_factory=dict)
     realized_pnl: float = 0.0
     poly_positions: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    poly_cost_basis: Dict[str, Dict[str, float]] = field(default_factory=dict)
     poly_realized_pnl: float = 0.0
     blocked: bool = False
 
@@ -192,6 +193,36 @@ class TradingState:
             or f"agent-{agent_uuid[:8]}"
         ).strip()
         avatar = str(payload.get("avatar") or "🦀").strip() or "🦀"
+        raw_poly_positions = payload.get("poly_positions", {})
+        raw_poly_cost_basis = payload.get("poly_cost_basis", {})
+
+        poly_positions: Dict[str, Dict[str, float]] = {}
+        if isinstance(raw_poly_positions, dict):
+            for market_id, outcomes in raw_poly_positions.items():
+                if not isinstance(outcomes, dict):
+                    continue
+                normalized_outcomes: Dict[str, float] = {}
+                for outcome, shares in outcomes.items():
+                    try:
+                        normalized_outcomes[str(outcome).upper()] = float(shares or 0.0)
+                    except Exception:
+                        continue
+                if normalized_outcomes:
+                    poly_positions[str(market_id)] = normalized_outcomes
+
+        poly_cost_basis: Dict[str, Dict[str, float]] = {}
+        if isinstance(raw_poly_cost_basis, dict):
+            for market_id, outcomes in raw_poly_cost_basis.items():
+                if not isinstance(outcomes, dict):
+                    continue
+                normalized_costs: Dict[str, float] = {}
+                for outcome, amount in outcomes.items():
+                    try:
+                        normalized_costs[str(outcome).upper()] = float(amount or 0.0)
+                    except Exception:
+                        continue
+                if normalized_costs:
+                    poly_cost_basis[str(market_id)] = normalized_costs
 
         return AgentAccount(
             agent_uuid=agent_uuid,
@@ -213,7 +244,8 @@ class TradingState:
             positions=dict(payload.get("positions", {})),
             avg_cost=dict(payload.get("avg_cost", {})),
             realized_pnl=float(payload.get("realized_pnl", 0.0)),
-            poly_positions=dict(payload.get("poly_positions", {})),
+            poly_positions=poly_positions,
+            poly_cost_basis=poly_cost_basis,
             poly_realized_pnl=float(payload.get("poly_realized_pnl", 0.0)),
             blocked=bool(payload.get("blocked", False)),
         )
@@ -461,6 +493,26 @@ class TradingState:
                             migration_changed = True
 
                 for agent_uuid, account in self.accounts.items():
+                    if not isinstance(account.poly_cost_basis, dict):
+                        account.poly_cost_basis = {}
+                        migration_changed = True
+                    for market_id, outcomes in account.poly_positions.items():
+                        if not isinstance(outcomes, dict):
+                            continue
+                        market_costs = account.poly_cost_basis.get(market_id)
+                        if not isinstance(market_costs, dict):
+                            market_costs = {}
+                            account.poly_cost_basis[market_id] = market_costs
+                            migration_changed = True
+                        for outcome, shares in outcomes.items():
+                            if outcome in market_costs:
+                                continue
+                            # Legacy data may not have explicit Poly cost basis.
+                            # Backfill a conservative estimate using current odds if available.
+                            odds = float(self.poly_markets.get(market_id, {}).get("outcomes", {}).get(outcome, 0.0) or 0.0)
+                            estimated_cost = max(0.0, float(shares or 0.0) * odds)
+                            market_costs[outcome] = estimated_cost
+                            migration_changed = True
                     if account.is_test:
                         self.test_agents.add(agent_uuid)
                 for post in self.forum_posts:

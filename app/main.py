@@ -6938,9 +6938,16 @@ def place_poly_bet(req: SimPolyBetRequest, agent_uuid: str = Depends(require_age
 
         shares = amount / float(odds)
         account.cash -= amount
+        poly_cost_basis = getattr(account, "poly_cost_basis", None)
+        if not isinstance(poly_cost_basis, dict):
+            poly_cost_basis = {}
+            setattr(account, "poly_cost_basis", poly_cost_basis)
         if market_id not in account.poly_positions:
             account.poly_positions[market_id] = {}
+        if market_id not in poly_cost_basis:
+            poly_cost_basis[market_id] = {}
         account.poly_positions[market_id][outcome] = account.poly_positions[market_id].get(outcome, 0.0) + shares
+        poly_cost_basis[market_id][outcome] = poly_cost_basis[market_id].get(outcome, 0.0) + amount
         STATE.record_operation(
             "poly_bet",
             agent_uuid=agent_uuid,
@@ -6988,20 +6995,37 @@ def resolve_poly_market(req: SimPolyResolveRequest, _: None = Depends(require_ad
         payouts = []
         for agent_uuid, account in STATE.accounts.items():
             positions = account.poly_positions.get(market_id, {})
+            poly_cost_basis = getattr(account, "poly_cost_basis", None)
+            if not isinstance(poly_cost_basis, dict):
+                poly_cost_basis = {}
+                setattr(account, "poly_cost_basis", poly_cost_basis)
+            costs = poly_cost_basis.get(market_id, {})
+            total_cost = 0.0
+            for _, cost_amount in costs.items():
+                try:
+                    total_cost += float(cost_amount or 0.0)
+                except Exception:
+                    continue
             shares = positions.get(winning_outcome, 0.0)
             payout = float(shares)
             if payout > 0:
                 account.cash += payout
-                account.poly_realized_pnl += payout
+            realized_delta = payout - total_cost
+            if realized_delta != 0.0:
+                account.poly_realized_pnl += realized_delta
+            if payout > 0 or total_cost > 0:
                 payouts.append(
                     {
                         "agent_id": account.display_name,
                         "agent_uuid": agent_uuid,
                         "avatar": account.avatar,
                         "payout": payout,
+                        "cost_basis": total_cost,
+                        "realized_delta": realized_delta,
                     }
                 )
             account.poly_positions.pop(market_id, None)
+            poly_cost_basis.pop(market_id, None)
         STATE.record_operation(
             "poly_resolve",
             details={
