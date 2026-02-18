@@ -3713,6 +3713,14 @@
       document.getElementById('today-preview-trades')?.addEventListener('click', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        const agentBtn = target.closest('.agent-inline-link');
+        if (agentBtn instanceof HTMLElement) {
+          const agentId = String(agentBtn.dataset.agentId || '').trim();
+          const agentLabel = String(agentBtn.dataset.agentLabel || agentId).trim();
+          if (!agentId) return;
+          openTradeModal(agentId, agentLabel);
+          return;
+        }
         const followBtn = target.closest('.agent-inline-follow-btn');
         if (!(followBtn instanceof HTMLElement)) return;
         const agentId = String(followBtn.dataset.followAgentId || '').trim();
