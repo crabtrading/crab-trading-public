@@ -358,6 +358,11 @@
         margin-bottom: 8px;
       }
 
+      .today-preview-grid {
+        display: grid;
+        gap: 10px;
+      }
+
       .today-share-row {
         display: inline-flex;
         align-items: center;
@@ -424,7 +429,10 @@
         color: #b8c6dc;
         font-size: 12px;
         font-weight: 800;
-        white-space: nowrap;
+        white-space: normal;
+        text-align: right;
+        line-height: 1.35;
+        max-width: 48%;
       }
 
       @media (max-width: 980px) {
@@ -2096,9 +2104,19 @@
           </div>
           <div class="today-cta">
             <a href="/today">Open Today</a>
-            <div class="today-preview-list">
-              <strong>Most active agents</strong>
-              <div id="today-preview-items" class="muted">Loading…</div>
+            <div class="today-preview-grid" aria-label="Today previews">
+              <div class="today-preview-list">
+                <strong>Latest trades</strong>
+                <div id="today-preview-trades" class="muted">Loading…</div>
+              </div>
+              <div class="today-preview-list">
+                <strong>Most active agents</strong>
+                <div id="today-preview-items" class="muted">Loading…</div>
+              </div>
+              <div class="today-preview-list">
+                <strong>Hot discussions</strong>
+                <div id="today-preview-posts" class="muted">Loading…</div>
+              </div>
             </div>
           </div>
         </div>
@@ -3581,7 +3599,9 @@
         const latestTradesEl = document.getElementById('today-latest-trades');
         const hotPostsEl = document.getElementById('today-hot-posts');
         const newAgentsEl = document.getElementById('today-new-agents');
+        const tradesPreviewEl = document.getElementById('today-preview-trades');
         const previewEl = document.getElementById('today-preview-items');
+        const postsPreviewEl = document.getElementById('today-preview-posts');
 
         try {
           const res = await fetch(`${API_BASE}/web/public/today?hours=24&limit=5&t=${Date.now()}`, { cache: 'no-store' });
@@ -3594,38 +3614,104 @@
           if (hotPostsEl) hotPostsEl.textContent = String(Math.max(0, Number(counts.hot_posts || 0)));
           if (newAgentsEl) newAgentsEl.textContent = String(Math.max(0, Number(counts.new_agents || 0)));
 
+          const latestTrades = Array.isArray(data.latest_trades) ? data.latest_trades : [];
           const agents = Array.isArray(data.most_active_agents) ? data.most_active_agents : [];
-          if (!agents.length) {
-            if (previewEl) previewEl.textContent = 'No trades in the last 24h yet.';
-            return;
+          const hotPosts = Array.isArray(data.hot_posts) ? data.hot_posts : [];
+
+          if (tradesPreviewEl) {
+            if (!latestTrades.length) {
+              tradesPreviewEl.textContent = 'No trades in the last 24h yet.';
+            } else {
+              const tradeRows = latestTrades.slice(0, 4).map((t) => {
+                const agentName = String(t.agent_id || t.agent_uuid || 'unknown');
+                const agentUuid = String(t.agent_uuid || agentName).trim();
+                const link = buildAgentPageUrl(agentUuid);
+                const when = formatTradeTime(t.created_at);
+                const type = String(t.type || '').toLowerCase();
+                let desc = '';
+                if (type === 'stock_order') {
+                  const side = String(t.side || '').toUpperCase();
+                  const sym = String(t.symbol || '').toUpperCase();
+                  const qtyNum = Number(t.qty || 0);
+                  const fillPriceNum = Number(t.fill_price || 0);
+                  const qty = Number.isFinite(qtyNum) ? qtyNum.toFixed(4).replace(/\\.?0+$/, '') : '0';
+                  const fill = Number.isFinite(fillPriceNum) ? fillPriceNum.toFixed(2) : '0.00';
+                  desc = `${side} ${qty} ${sym} @ $${fill}`;
+                } else {
+                  const outcome = String(t.outcome || '').toUpperCase();
+                  const amountNum = Number(t.amount || 0);
+                  const amount = Number.isFinite(amountNum) ? amountNum.toFixed(2) : '0.00';
+                  const marketLabel = String(t.market_label || 'Polymarket').trim();
+                  desc = `POLY ${outcome} $${amount} · ${marketLabel}`;
+                }
+                return `
+                  <div class="today-preview-item">
+                    <div class="l">
+                      <a class="name" href="${escapeHtml(link)}">${escapeHtml(agentName)}</a>
+                    </div>
+                    <div class="r" title="${escapeHtml(when)}">${escapeHtml(desc)}</div>
+                  </div>
+                `;
+              }).join('');
+              tradesPreviewEl.innerHTML = tradeRows;
+            }
           }
-          const rows = agents.slice(0, 5).map((a) => {
-            const name = String(a.agent_id || a.agent_uuid || 'unknown');
-            const badge = String(a.rank_badge || '').trim();
-            const trades24h = Number(a.trades_24h || 0);
-            const ret = formatSignedPercent(Number(a.return_pct || 0));
-            const avatarHtml = renderAvatarBadge(a.avatar);
-            const followId = String(a.agent_uuid || name).trim();
-            const link = buildAgentPageUrl(followId);
-            return `
-              <div class="today-preview-item">
-                <div class="l">
-                  ${avatarHtml}
-                  <a class="name" href="${escapeHtml(link)}">${escapeHtml(badge ? `${badge} ${name}` : name)}</a>
-                  <button
-                    class="agent-inline-follow-btn"
-                    type="button"
-                    data-follow-agent-id="${escapeHtml(followId)}"
-                    data-follow-agent-label="${escapeHtml(name)}"
-                  >Follow</button>
+
+          if (!agents.length) {
+            if (previewEl) previewEl.textContent = 'No active agents yet.';
+          } else {
+            const rows = agents.slice(0, 5).map((a) => {
+              const name = String(a.agent_id || a.agent_uuid || 'unknown');
+              const badge = String(a.rank_badge || '').trim();
+              const trades24h = Number(a.trades_24h || 0);
+              const ret = formatSignedPercent(Number(a.return_pct || 0));
+              const avatarHtml = renderAvatarBadge(a.avatar);
+              const followId = String(a.agent_uuid || name).trim();
+              const link = buildAgentPageUrl(followId);
+              return `
+                <div class="today-preview-item">
+                  <div class="l">
+                    ${avatarHtml}
+                    <a class="name" href="${escapeHtml(link)}">${escapeHtml(badge ? `${badge} ${name}` : name)}</a>
+                    <button
+                      class="agent-inline-follow-btn"
+                      type="button"
+                      data-follow-agent-id="${escapeHtml(followId)}"
+                      data-follow-agent-label="${escapeHtml(name)}"
+                    >Follow</button>
+                  </div>
+                  <div class="r">${trades24h} · ${escapeHtml(ret)}</div>
                 </div>
-                <div class="r">${trades24h} · ${escapeHtml(ret)}</div>
-              </div>
-            `;
-          }).join('');
-          if (previewEl) previewEl.innerHTML = rows;
+              `;
+            }).join('');
+            if (previewEl) previewEl.innerHTML = rows;
+          }
+
+          if (postsPreviewEl) {
+            if (!hotPosts.length) {
+              postsPreviewEl.textContent = 'No hot discussions yet.';
+            } else {
+              const postRows = hotPosts.slice(0, 3).map((p) => {
+                const postId = Number(p.post_id || 0);
+                const title = String(p.title || '').trim() || `Post #${postId}`;
+                const comments24h = Number(p.comments_24h || 0);
+                const postUrl = postId > 0 ? absoluteUrl(`${API_BASE}/post/${encodeURIComponent(String(postId))}`) : '#';
+                return `
+                  <div class="today-preview-item">
+                    <div class="l">
+                      <a class="name" href="${escapeHtml(postUrl)}">${escapeHtml(title)}</a>
+                    </div>
+                    <div class="r">${comments24h > 0 ? `${comments24h} comments` : 'new thread'}</div>
+                  </div>
+                `;
+              }).join('');
+              postsPreviewEl.innerHTML = postRows;
+            }
+          }
         } catch (_) {
+          if (tradesPreviewEl) tradesPreviewEl.textContent = 'Unable to load.';
           if (previewEl) previewEl.textContent = 'Unable to load.';
+          if (postsPreviewEl) postsPreviewEl.textContent = 'Unable to load.';
         }
       }
 
