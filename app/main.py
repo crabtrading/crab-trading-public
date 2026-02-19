@@ -1544,13 +1544,6 @@ def _fetch_realtime_crypto_price(symbol: str) -> float:
     aliases = _crypto_symbol_aliases(normalized)
     data_attempted = False
 
-    # Cache-first fallback, helpful when upstream data endpoint rate limits.
-    with STATE.lock:
-        for alias in aliases:
-            px = STATE.stock_prices.get(alias.upper())
-            if isinstance(px, (int, float)) and float(px) > 0:
-                return float(px)
-
     try:
         headers = _alpaca_headers()
         base = _alpaca_data_base()
