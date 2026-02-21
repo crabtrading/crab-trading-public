@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import secrets
+import hashlib
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,6 +63,39 @@ class AgentAccount:
         self.display_name = str(value or "").strip()
 
 
+@dataclass
+class QuickHandoverToken:
+    token_id: str
+    token_hash: str
+    owner_id: str
+    follower_agent_uuid: str
+    target_agent_uuid: str
+    created_at: str
+    expires_at: str
+    consumed_at: str = ""
+    consumed_key_id: str = ""
+    status: str = "issued"
+    telegram_chat_suffix: str = ""
+    last_error_code: str = ""
+    last_result: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class QuickHandoverCallback:
+    token_id: str
+    owner_id: str
+    follower_agent_uuid: str
+    target_agent_uuid: str
+    telegram_chat_id: str
+    webhook_secret: str
+    webhook_url: str
+    webhook_id: int
+    created_at: str
+    updated_at: str
+    status: str = "configured"
+    last_error_code: str = ""
+
+
 class TradingState:
     def __init__(self) -> None:
         self.lock = RLock()
@@ -88,7 +123,15 @@ class TradingState:
         self.registration_challenges: Dict[str, dict] = {}
         self.pending_by_agent: Dict[str, str] = {}
         self.registration_by_api_key: Dict[str, str] = {}
+        self.temp_follow_api_keys: Dict[str, dict] = {}
         self.agent_following: Dict[str, list] = {}
+        self.follow_webhooks: Dict[str, list] = {}
+        self.follow_webhook_deliveries: list[dict] = []
+        self.next_follow_webhook_id: int = 1
+        self.next_follow_webhook_delivery_id: int = 1
+        self.quick_handover_tokens: Dict[str, dict] = {}
+        self.quick_handover_callbacks: Dict[str, dict] = {}
+        self.openclaw_nonces: Dict[str, dict] = {}
         self.stock_prices: Dict[str, float] = {
             "AAPL": 210.0,
             "TSLA": 185.0,
@@ -268,6 +311,33 @@ class TradingState:
         max_id = max(int(e.get("id", 0)) for e in self.activity_log if isinstance(e, dict))
         return max(max_id + 1, 1)
 
+    def _derive_next_follow_webhook_id(self) -> int:
+        max_id = 0
+        for configs in self.follow_webhooks.values():
+            if not isinstance(configs, list):
+                continue
+            for item in configs:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    max_id = max(max_id, int(item.get("webhook_id", 0) or 0))
+                except Exception:
+                    continue
+        return max(max_id + 1, 1)
+
+    def _derive_next_follow_webhook_delivery_id(self) -> int:
+        if not self.follow_webhook_deliveries:
+            return 1
+        max_id = 0
+        for row in self.follow_webhook_deliveries:
+            if not isinstance(row, dict):
+                continue
+            try:
+                max_id = max(max_id, int(row.get("delivery_id", 0) or 0))
+            except Exception:
+                continue
+        return max(max_id + 1, 1)
+
     def _load_legacy_forum_only(self) -> None:
         if not self.legacy_forum_file.exists():
             return
@@ -368,6 +438,32 @@ class TradingState:
                     self.pending_by_agent = dict(raw["pending_by_agent"])
                 if isinstance(raw.get("registration_by_api_key"), dict):
                     self.registration_by_api_key = dict(raw["registration_by_api_key"])
+                temp_follow_raw = raw.get("temp_follow_api_keys", {})
+                if isinstance(temp_follow_raw, dict):
+                    normalized_temp_follow: Dict[str, dict] = {}
+                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    for token, payload in temp_follow_raw.items():
+                        token_value = str(token or "").strip()
+                        if not token_value or not isinstance(payload, dict):
+                            continue
+                        agent_uuid = resolve_uuid(str(payload.get("agent_uuid", "")))
+                        if not agent_uuid:
+                            continue
+                        try:
+                            expires_at = int(payload.get("expires_at", 0) or 0)
+                        except Exception:
+                            expires_at = 0
+                        if expires_at <= now_ts:
+                            continue
+                        normalized_temp_follow[token_value] = {
+                            "agent_uuid": agent_uuid,
+                            "scope": "follow",
+                            "issued_at": int(payload.get("issued_at", now_ts) or now_ts),
+                            "expires_at": expires_at,
+                        }
+                    self.temp_follow_api_keys = normalized_temp_follow
+                else:
+                    self.temp_follow_api_keys = {}
                 following_raw = raw.get("agent_following", {})
                 if isinstance(following_raw, dict):
                     normalized_following: Dict[str, list] = {}
@@ -403,6 +499,162 @@ class TradingState:
                     self.agent_following = normalized_following
                 else:
                     self.agent_following = {}
+
+                follow_webhooks_raw = raw.get("follow_webhooks", {})
+                if isinstance(follow_webhooks_raw, dict):
+                    normalized_follow_webhooks: Dict[str, list] = {}
+                    for follower_identifier, configs in follow_webhooks_raw.items():
+                        follower_uuid = resolve_uuid(str(follower_identifier))
+                        if not follower_uuid or not isinstance(configs, list):
+                            continue
+                        normalized_configs: list[dict] = []
+                        for item in configs:
+                            if not isinstance(item, dict):
+                                continue
+                            try:
+                                webhook_id = int(item.get("webhook_id", 0) or 0)
+                            except Exception:
+                                webhook_id = 0
+                            target_identifier = (
+                                str(item.get("target_agent_uuid", "")).strip()
+                                or str(item.get("target_agent_id", "")).strip()
+                                or str(item.get("agent_uuid", "")).strip()
+                                or str(item.get("agent_id", "")).strip()
+                            )
+                            target_uuid = resolve_uuid(target_identifier) or str(item.get("target_agent_uuid", "")).strip()
+                            if not target_uuid:
+                                continue
+                            normalized_configs.append(
+                                {
+                                    "webhook_id": webhook_id,
+                                    "target_agent_uuid": target_uuid,
+                                    "url": str(item.get("url", "")).strip(),
+                                    "secret_enc": str(item.get("secret_enc", "")).strip(),
+                                    "enabled": bool(item.get("enabled", True)),
+                                    "events": list(item.get("events", [])) if isinstance(item.get("events", []), list) else [],
+                                    "orphaned": bool(item.get("orphaned", False)),
+                                    "created_at": str(item.get("created_at", "")).strip(),
+                                    "updated_at": str(item.get("updated_at", "")).strip(),
+                                }
+                            )
+                        normalized_follow_webhooks[follower_uuid] = normalized_configs
+                    self.follow_webhooks = normalized_follow_webhooks
+                else:
+                    self.follow_webhooks = {}
+
+                deliveries_raw = raw.get("follow_webhook_deliveries", [])
+                if isinstance(deliveries_raw, list):
+                    self.follow_webhook_deliveries = [row for row in deliveries_raw if isinstance(row, dict)]
+                else:
+                    self.follow_webhook_deliveries = []
+                next_webhook_id = raw.get("next_follow_webhook_id")
+                if isinstance(next_webhook_id, int) and next_webhook_id > 0:
+                    self.next_follow_webhook_id = next_webhook_id
+                else:
+                    self.next_follow_webhook_id = self._derive_next_follow_webhook_id()
+                next_delivery_id = raw.get("next_follow_webhook_delivery_id")
+                if isinstance(next_delivery_id, int) and next_delivery_id > 0:
+                    self.next_follow_webhook_delivery_id = next_delivery_id
+                else:
+                    self.next_follow_webhook_delivery_id = self._derive_next_follow_webhook_delivery_id()
+                quick_tokens_raw = raw.get("quick_handover_tokens", {})
+                if isinstance(quick_tokens_raw, dict):
+                    normalized_quick_tokens: Dict[str, dict] = {}
+                    now_dt = datetime.now(timezone.utc)
+                    for token_id, item in quick_tokens_raw.items():
+                        token_key = str(token_id or "").strip()
+                        if not token_key or not isinstance(item, dict):
+                            continue
+                        token_hash = str(item.get("token_hash", "")).strip().lower()
+                        owner_id = str(item.get("owner_id", "")).strip()
+                        follower_uuid = resolve_uuid(str(item.get("follower_agent_uuid", "")))
+                        target_uuid = resolve_uuid(str(item.get("target_agent_uuid", "")))
+                        if not token_hash or not owner_id or not follower_uuid or not target_uuid:
+                            continue
+                        created_at = str(item.get("created_at", "")).strip()
+                        expires_at = str(item.get("expires_at", "")).strip()
+                        try:
+                            expires_dt = datetime.fromisoformat(expires_at).astimezone(timezone.utc) if expires_at else None
+                        except Exception:
+                            expires_dt = None
+                        status = str(item.get("status", "issued")).strip().lower() or "issued"
+                        if status == "issued" and expires_dt is not None and expires_dt <= now_dt:
+                            status = "expired"
+                        normalized_quick_tokens[token_key] = asdict(
+                            QuickHandoverToken(
+                                token_id=token_key,
+                                token_hash=token_hash,
+                                owner_id=owner_id,
+                                follower_agent_uuid=follower_uuid,
+                                target_agent_uuid=target_uuid,
+                                created_at=created_at,
+                                expires_at=expires_at,
+                                consumed_at=str(item.get("consumed_at", "")).strip(),
+                                consumed_key_id=str(item.get("consumed_key_id", "")).strip(),
+                                status=status,
+                                telegram_chat_suffix=str(item.get("telegram_chat_suffix", "")).strip(),
+                                last_error_code=str(item.get("last_error_code", "")).strip(),
+                                last_result=dict(item.get("last_result", {}))
+                                if isinstance(item.get("last_result", {}), dict)
+                                else {},
+                            )
+                        )
+                    self.quick_handover_tokens = normalized_quick_tokens
+                else:
+                    self.quick_handover_tokens = {}
+
+                quick_callbacks_raw = raw.get("quick_handover_callbacks", {})
+                if isinstance(quick_callbacks_raw, dict):
+                    normalized_callbacks: Dict[str, dict] = {}
+                    for token_id, item in quick_callbacks_raw.items():
+                        token_key = str(token_id or "").strip()
+                        if not token_key or not isinstance(item, dict):
+                            continue
+                        follower_uuid = resolve_uuid(str(item.get("follower_agent_uuid", "")))
+                        target_uuid = resolve_uuid(str(item.get("target_agent_uuid", "")))
+                        if not follower_uuid or not target_uuid:
+                            continue
+                        normalized_callbacks[token_key] = asdict(
+                            QuickHandoverCallback(
+                                token_id=token_key,
+                                owner_id=str(item.get("owner_id", "")).strip(),
+                                follower_agent_uuid=follower_uuid,
+                                target_agent_uuid=target_uuid,
+                                telegram_chat_id=str(item.get("telegram_chat_id", "")).strip(),
+                                webhook_secret=str(item.get("webhook_secret", "")).strip(),
+                                webhook_url=str(item.get("webhook_url", "")).strip(),
+                                webhook_id=int(item.get("webhook_id", 0) or 0),
+                                created_at=str(item.get("created_at", "")).strip(),
+                                updated_at=str(item.get("updated_at", "")).strip(),
+                                status=str(item.get("status", "configured")).strip() or "configured",
+                                last_error_code=str(item.get("last_error_code", "")).strip(),
+                            )
+                        )
+                    self.quick_handover_callbacks = normalized_callbacks
+                else:
+                    self.quick_handover_callbacks = {}
+
+                nonces_raw = raw.get("openclaw_nonces", {})
+                if isinstance(nonces_raw, dict):
+                    normalized_nonces: Dict[str, dict] = {}
+                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    for nonce_key, item in nonces_raw.items():
+                        key = str(nonce_key or "").strip()
+                        if not key or not isinstance(item, dict):
+                            continue
+                        try:
+                            expires_at = int(item.get("expires_at", 0) or 0)
+                        except Exception:
+                            expires_at = 0
+                        if expires_at <= now_ts:
+                            continue
+                        normalized_nonces[key] = {
+                            "created_at": int(item.get("created_at", now_ts) or now_ts),
+                            "expires_at": expires_at,
+                        }
+                    self.openclaw_nonces = normalized_nonces
+                else:
+                    self.openclaw_nonces = {}
                 if isinstance(raw.get("stock_prices"), dict):
                     self.stock_prices = dict(raw["stock_prices"])
                 if isinstance(raw.get("poly_markets"), dict):
@@ -545,6 +797,13 @@ class TradingState:
                 self.pending_by_agent = {}
                 self.registration_by_api_key = {}
                 self.agent_following = {}
+                self.follow_webhooks = {}
+                self.follow_webhook_deliveries = []
+                self.next_follow_webhook_id = 1
+                self.next_follow_webhook_delivery_id = 1
+                self.quick_handover_tokens = {}
+                self.quick_handover_callbacks = {}
+                self.openclaw_nonces = {}
                 self.forum_posts = []
                 self.next_forum_post_id = 1
                 self.forum_comments = []
@@ -612,7 +871,15 @@ class TradingState:
                 "registration_challenges": self.registration_challenges,
                 "pending_by_agent": self.pending_by_agent,
                 "registration_by_api_key": self.registration_by_api_key,
+                "temp_follow_api_keys": self.temp_follow_api_keys,
                 "agent_following": self.agent_following,
+                "follow_webhooks": self.follow_webhooks,
+                "follow_webhook_deliveries": self.follow_webhook_deliveries,
+                "next_follow_webhook_id": self.next_follow_webhook_id,
+                "next_follow_webhook_delivery_id": self.next_follow_webhook_delivery_id,
+                "quick_handover_tokens": self.quick_handover_tokens,
+                "quick_handover_callbacks": self.quick_handover_callbacks,
+                "openclaw_nonces": self.openclaw_nonces,
                 "forum_posts": self.forum_posts,
                 "next_forum_post_id": self.next_forum_post_id,
                 "forum_comments": self.forum_comments,
@@ -624,6 +891,338 @@ class TradingState:
                 "test_agents": sorted(self.test_agents),
             }
             self._sqlite_save_payload_unlocked(payload)
+
+    @staticmethod
+    def _quick_handover_token_hash(token: str) -> str:
+        return hashlib.sha256(str(token or "").strip().encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _quick_handover_chat_suffix(chat_id: str) -> str:
+        text = str(chat_id or "").strip()
+        if not text:
+            return ""
+        if len(text) <= 4:
+            return text
+        return text[-4:]
+
+    def _cleanup_openclaw_nonces_unlocked(self) -> None:
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        for key, row in list(self.openclaw_nonces.items()):
+            try:
+                expires_at = int((row or {}).get("expires_at", 0) or 0)
+            except Exception:
+                expires_at = 0
+            if expires_at <= now_ts:
+                self.openclaw_nonces.pop(key, None)
+
+    def _cleanup_quick_handover_expiry_unlocked(self) -> None:
+        now_dt = datetime.now(timezone.utc)
+        for token_id, row in self.quick_handover_tokens.items():
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("status", "issued")).strip().lower()
+            if status != "issued":
+                continue
+            expires_at = str(row.get("expires_at", "")).strip()
+            if not expires_at:
+                continue
+            try:
+                expires_dt = datetime.fromisoformat(expires_at)
+                if expires_dt.tzinfo is None:
+                    expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                expires_dt = expires_dt.astimezone(timezone.utc)
+            except Exception:
+                continue
+            if expires_dt <= now_dt:
+                row["status"] = "expired"
+                row["last_error_code"] = str(row.get("last_error_code", "") or "quick_token_expired")
+
+    def issue_quick_handover_token(
+        self,
+        *,
+        owner_id: str,
+        follower_agent_uuid: str,
+        target_agent_uuid: str,
+        ttl_minutes: int = 5,
+    ) -> dict:
+        with self.lock:
+            follower_uuid = self._resolve_agent_uuid_unlocked(str(follower_agent_uuid or "").strip())
+            target_uuid = self._resolve_agent_uuid_unlocked(str(target_agent_uuid or "").strip())
+            owner = str(owner_id or "").strip()
+            if not owner:
+                raise ValueError("owner_not_found")
+            if not follower_uuid:
+                raise ValueError("follower_agent_not_found")
+            if not target_uuid:
+                raise ValueError("target_agent_not_found")
+            ttl = max(1, min(int(ttl_minutes or 5), 30))
+            now_dt = datetime.now(timezone.utc)
+            created_at = now_dt.isoformat()
+            expires_at = now_dt.replace(microsecond=0).timestamp() + ttl * 60
+            expires_iso = datetime.fromtimestamp(int(expires_at), tz=timezone.utc).isoformat()
+            token_id = f"qht_{secrets.token_urlsafe(9)}"
+            quick_token = f"qhtk_{secrets.token_urlsafe(24)}"
+            token_hash = self._quick_handover_token_hash(quick_token)
+            while token_id in self.quick_handover_tokens:
+                token_id = f"qht_{secrets.token_urlsafe(9)}"
+            while any(
+                str((row or {}).get("token_hash", "")).strip().lower() == token_hash
+                for row in self.quick_handover_tokens.values()
+                if isinstance(row, dict)
+            ):
+                quick_token = f"qhtk_{secrets.token_urlsafe(24)}"
+                token_hash = self._quick_handover_token_hash(quick_token)
+            row = asdict(
+                QuickHandoverToken(
+                    token_id=token_id,
+                    token_hash=token_hash,
+                    owner_id=owner,
+                    follower_agent_uuid=follower_uuid,
+                    target_agent_uuid=target_uuid,
+                    created_at=created_at,
+                    expires_at=expires_iso,
+                )
+            )
+            self.quick_handover_tokens[token_id] = row
+            self._cleanup_quick_handover_expiry_unlocked()
+            self.save_runtime_state()
+            out = dict(row)
+            out["quick_token"] = quick_token
+            return out
+
+    def _find_quick_handover_by_hash_unlocked(self, token_hash: str) -> tuple[str, Optional[dict]]:
+        needle = str(token_hash or "").strip().lower()
+        if not needle:
+            return "", None
+        for token_id, row in self.quick_handover_tokens.items():
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("token_hash", "")).strip().lower() == needle:
+                return token_id, row
+        return "", None
+
+    def get_quick_handover_token(self, token_id: str) -> Optional[dict]:
+        with self.lock:
+            self._cleanup_quick_handover_expiry_unlocked()
+            row = self.quick_handover_tokens.get(str(token_id or "").strip())
+            if not isinstance(row, dict):
+                return None
+            return dict(row)
+
+    def get_quick_handover_by_token(self, quick_token: str) -> Optional[dict]:
+        with self.lock:
+            self._cleanup_quick_handover_expiry_unlocked()
+            token_hash = self._quick_handover_token_hash(str(quick_token or "").strip())
+            token_id, row = self._find_quick_handover_by_hash_unlocked(token_hash)
+            if not token_id or not isinstance(row, dict):
+                return None
+            out = dict(row)
+            out["token_id"] = token_id
+            return out
+
+    def consume_quick_handover_token(
+        self,
+        *,
+        quick_token: str,
+        telegram_chat_id: str,
+        consumed_key_id: str = "",
+    ) -> dict:
+        with self.lock:
+            self._cleanup_quick_handover_expiry_unlocked()
+            token_hash = self._quick_handover_token_hash(str(quick_token or "").strip())
+            token_id, row = self._find_quick_handover_by_hash_unlocked(token_hash)
+            if not token_id or not isinstance(row, dict):
+                raise RuntimeError("quick_token_not_found")
+
+            status = str(row.get("status", "issued")).strip().lower()
+            if status == "expired":
+                raise RuntimeError("quick_token_expired")
+            if str(row.get("consumed_at", "")).strip():
+                raise RuntimeError("quick_token_replay")
+
+            expires_at = str(row.get("expires_at", "")).strip()
+            expires_dt = None
+            if expires_at:
+                try:
+                    expires_dt = datetime.fromisoformat(expires_at)
+                    if expires_dt.tzinfo is None:
+                        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                    expires_dt = expires_dt.astimezone(timezone.utc)
+                except Exception:
+                    expires_dt = None
+            if expires_dt is not None and expires_dt <= datetime.now(timezone.utc):
+                row["status"] = "expired"
+                row["last_error_code"] = "quick_token_expired"
+                self.quick_handover_tokens[token_id] = row
+                self.save_runtime_state()
+                raise RuntimeError("quick_token_expired")
+
+            row["consumed_at"] = datetime.now(timezone.utc).isoformat()
+            row["consumed_key_id"] = str(consumed_key_id or "").strip()
+            row["status"] = "consumed_pending"
+            row["telegram_chat_suffix"] = self._quick_handover_chat_suffix(telegram_chat_id)
+            self.quick_handover_tokens[token_id] = row
+            self.save_runtime_state()
+
+            out = dict(row)
+            out["token_id"] = token_id
+            return out
+
+    def finalize_quick_handover(
+        self,
+        *,
+        token_id: str,
+        status: str,
+        result: Optional[dict] = None,
+        error_code: str = "",
+    ) -> Optional[dict]:
+        with self.lock:
+            key = str(token_id or "").strip()
+            row = self.quick_handover_tokens.get(key)
+            if not isinstance(row, dict):
+                return None
+            row["status"] = str(status or "").strip().lower() or "consumed_failed"
+            row["last_error_code"] = str(error_code or "").strip()
+            row["last_result"] = dict(result or {}) if isinstance(result, dict) else {}
+            self.quick_handover_tokens[key] = row
+            self.save_runtime_state()
+            return dict(row)
+
+    def upsert_quick_handover_callback(
+        self,
+        *,
+        token_id: str,
+        owner_id: str,
+        follower_agent_uuid: str,
+        target_agent_uuid: str,
+        telegram_chat_id: str,
+        webhook_secret: str,
+        webhook_url: str,
+        webhook_id: int,
+        status: str = "configured",
+        error_code: str = "",
+    ) -> dict:
+        with self.lock:
+            token_key = str(token_id or "").strip()
+            now_iso = datetime.now(timezone.utc).isoformat()
+            existing = self.quick_handover_callbacks.get(token_key)
+            created_at = str((existing or {}).get("created_at", "")).strip() if isinstance(existing, dict) else ""
+            if not created_at:
+                created_at = now_iso
+            row = asdict(
+                QuickHandoverCallback(
+                    token_id=token_key,
+                    owner_id=str(owner_id or "").strip(),
+                    follower_agent_uuid=str(follower_agent_uuid or "").strip(),
+                    target_agent_uuid=str(target_agent_uuid or "").strip(),
+                    telegram_chat_id=str(telegram_chat_id or "").strip(),
+                    webhook_secret=str(webhook_secret or "").strip(),
+                    webhook_url=str(webhook_url or "").strip(),
+                    webhook_id=max(0, int(webhook_id or 0)),
+                    created_at=created_at,
+                    updated_at=now_iso,
+                    status=str(status or "configured").strip() or "configured",
+                    last_error_code=str(error_code or "").strip(),
+                )
+            )
+            self.quick_handover_callbacks[token_key] = row
+            self.save_runtime_state()
+            return dict(row)
+
+    def get_quick_handover_callback(self, token_id: str) -> Optional[dict]:
+        with self.lock:
+            row = self.quick_handover_callbacks.get(str(token_id or "").strip())
+            if not isinstance(row, dict):
+                return None
+            return dict(row)
+
+    def touch_quick_handover_callback(
+        self,
+        *,
+        token_id: str,
+        status: str,
+        error_code: str = "",
+    ) -> Optional[dict]:
+        with self.lock:
+            key = str(token_id or "").strip()
+            row = self.quick_handover_callbacks.get(key)
+            if not isinstance(row, dict):
+                return None
+            row["status"] = str(status or "").strip() or row.get("status", "configured")
+            row["last_error_code"] = str(error_code or "").strip()
+            row["updated_at"] = datetime.now(timezone.utc).isoformat()
+            self.quick_handover_callbacks[key] = row
+            self.save_runtime_state()
+            return dict(row)
+
+    def consume_openclaw_nonce(self, *, key_id: str, nonce: str, ttl_seconds: int = 600) -> bool:
+        with self.lock:
+            kid = str(key_id or "").strip()
+            nonce_value = str(nonce or "").strip()
+            if not kid or not nonce_value:
+                return False
+            self._cleanup_openclaw_nonces_unlocked()
+            map_key = f"{kid}:{nonce_value}"
+            if map_key in self.openclaw_nonces:
+                return False
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            ttl = max(60, min(int(ttl_seconds or 600), 3600))
+            self.openclaw_nonces[map_key] = {
+                "created_at": now_ts,
+                "expires_at": now_ts + ttl,
+            }
+            self.save_runtime_state()
+            return True
+
+    def issue_temp_follow_api_key(self, agent_uuid: str, ttl_seconds: int = 300) -> dict:
+        with self.lock:
+            normalized_uuid = self._resolve_agent_uuid_unlocked(str(agent_uuid or "").strip())
+            if not normalized_uuid:
+                raise ValueError("agent_not_found")
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            expires_at = now_ts + max(60, min(int(ttl_seconds or 300), 3600))
+            token = f"tmp_follow_{secrets.token_urlsafe(18)}"
+            self.temp_follow_api_keys[token] = {
+                "agent_uuid": normalized_uuid,
+                "scope": "follow",
+                "issued_at": now_ts,
+                "expires_at": expires_at,
+            }
+            # Opportunistic cleanup of expired temporary follow keys.
+            for existing_token, row in list(self.temp_follow_api_keys.items()):
+                try:
+                    row_expires = int((row or {}).get("expires_at", 0) or 0)
+                except Exception:
+                    row_expires = 0
+                if row_expires <= now_ts:
+                    self.temp_follow_api_keys.pop(existing_token, None)
+            self.save_runtime_state()
+            return {
+                "api_key": token,
+                "agent_uuid": normalized_uuid,
+                "scope": "follow",
+                "issued_at": now_ts,
+                "expires_at": expires_at,
+            }
+
+    def resolve_temp_follow_api_key(self, token: str) -> Optional[dict]:
+        with self.lock:
+            key = str(token or "").strip()
+            if not key:
+                return None
+            row = self.temp_follow_api_keys.get(key)
+            if not isinstance(row, dict):
+                return None
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            try:
+                expires_at = int(row.get("expires_at", 0) or 0)
+            except Exception:
+                expires_at = 0
+            if expires_at <= now_ts:
+                self.temp_follow_api_keys.pop(key, None)
+                self.save_runtime_state()
+                return None
+            return dict(row)
 
 
 STATE = TradingState()

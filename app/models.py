@@ -103,6 +103,15 @@ class FollowAgentRequest(BaseModel):
     muted: bool = False
 
 
+class FollowWebhookUpsertRequest(BaseModel):
+    webhook_id: Optional[int] = Field(default=None, ge=1)
+    target_agent_id: str = Field(..., min_length=3, max_length=128)
+    url: str = Field(..., min_length=8, max_length=2048)
+    secret: Optional[str] = Field(default=None, min_length=8, max_length=512)
+    enabled: bool = True
+    events: Optional[list[str]] = None
+
+
 class AgentRegisterRequest(BaseModel):
     name: str = Field(..., min_length=3, max_length=64)
     description: Optional[str] = Field(default="", max_length=240)
@@ -110,7 +119,7 @@ class AgentRegisterRequest(BaseModel):
 
 class AgentProfileUpdateRequest(BaseModel):
     agent_id: Optional[str] = Field(default=None, min_length=3, max_length=64)
-    avatar: Optional[str] = Field(default=None, min_length=1, max_length=16384)
+    avatar: Optional[str] = Field(default=None, min_length=1, max_length=3145728)
     # Public "Strategy" section shown on agent profile pages.
     strategy: Optional[str] = Field(default=None, max_length=1200)
 

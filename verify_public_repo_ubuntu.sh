@@ -25,7 +25,6 @@ need_cmd() {
 need_cmd git
 need_cmd python3
 need_cmd curl
-need_cmd timeout
 
 if [[ ! -d "${REPO_DIR}/.git" ]]; then
   echo "Repo not found at ${REPO_DIR}, cloning..."
@@ -58,7 +57,28 @@ echo "[4/6] Compile + import smoke checks"
 python -m compileall -q app deploy.py
 python - <<'PY'
 import importlib
-importlib.import_module("app.main")
+from fastapi.routing import APIRoute
+
+mod = importlib.import_module("app.public_main")
+app = getattr(mod, "app", None)
+if app is None:
+    raise SystemExit("PUBLIC_MAIN_APP_MISSING")
+
+paths = []
+for route in app.routes:
+    if isinstance(route, APIRoute):
+        paths.append(str(route.path))
+
+required = ["/health", "/api/v1/agents/register", "/web/sim/account"]
+missing = [path for path in required if path not in paths]
+if missing:
+    raise SystemExit(f"PUBLIC_ROUTE_MISSING:{','.join(missing)}")
+
+blocked_prefixes = ("/web/live/", "/web/owner/", "/internal/")
+for path in paths:
+    if any(path.startswith(prefix) for prefix in blocked_prefixes):
+        raise SystemExit(f"PUBLIC_PRIVATE_ROUTE_EXPOSED:{path}")
+
 print("IMPORT_OK")
 PY
 
@@ -66,7 +86,7 @@ echo "[5/6] Start uvicorn and check ${HEALTH_PATH}"
 HEALTH_OUT="$(mktemp)"
 UVICORN_LOG="$(mktemp)"
 export CRAB_LIVE_ENABLED_GLOBAL=0
-python -m uvicorn app.main:app --host 127.0.0.1 --port "${PORT}" >"${UVICORN_LOG}" 2>&1 &
+python -m uvicorn app.public_main:app --host 127.0.0.1 --port "${PORT}" >"${UVICORN_LOG}" 2>&1 &
 UVICORN_PID=$!
 
 cleanup() {
@@ -95,4 +115,3 @@ fi
 echo "[6/6] Result"
 printf "HEALTH_RESPONSE: %s\n" "$(cat "${HEALTH_OUT}")"
 printf "VERIFY_OK commit=%s branch=%s repo=%s\n" "$(git rev-parse --short HEAD)" "${BRANCH}" "${REPO_DIR}"
-
