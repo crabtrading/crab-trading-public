@@ -19,4 +19,10 @@
 - /.cloudflared/
 - /admin_token
 - /admin_allowlist
+- /internal_beta/
+- /app/live/
+- /app/main.py
+- /docs/live-security-hardening.md
+- /app/static/binance-us.svg
+- /release_flow.sh
 - /sync_public_safe.sh

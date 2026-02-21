@@ -5,12 +5,18 @@ Modes:
 - local: restart local services only (no rsync/ssh)
 - remote: rsync to remote host and restart remote services
 - auto: remote when CRAB_REMOTE_HOST + CRAB_REMOTE_DIR are set, otherwise local
+
+Targets:
+- prod: defaults to production service/path/host
+- beta: defaults to beta service/path/host
+- custom: no target defaults
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -36,6 +42,20 @@ EXCLUDES = [
     "tsll_price_mcp.py",
 ]
 
+TARGET_DEFAULTS = {
+    "prod": {
+        "service_name": "crab-trading",
+        "remote_dir": "/opt/crab-trading/",
+        "health_host": "crabtrading.ai",
+    },
+    "beta": {
+        "service_name": "crab-trading-beta",
+        "remote_dir": "/opt/crab-trading-beta/",
+        "health_host": "beta.crabtrading.ai",
+    },
+    "custom": {},
+}
+
 
 def run(cmd: list[str], *, shell: bool = False) -> None:
     if shell:
@@ -60,10 +80,10 @@ def ensure_local_systemctl() -> str:
     return bin_path
 
 
-def local_deploy(skip_nginx: bool) -> None:
+def local_deploy(service_name: str, skip_nginx: bool) -> None:
     sysctl = ensure_local_systemctl()
-    run([sysctl, "restart", "crab-trading"])
-    run([sysctl, "is-active", "crab-trading"])
+    run([sysctl, "restart", service_name])
+    run([sysctl, "is-active", service_name])
 
     if skip_nginx:
         print("Skipping nginx reload (--skip-nginx).")
@@ -86,7 +106,11 @@ def remote_deploy(
     local_dir: str,
     remote_host: str,
     remote_dir: str,
+    service_name: str,
     skip_nginx: bool,
+    health_host: str,
+    health_path: str,
+    skip_health_check: bool,
 ) -> None:
     rsync_cmd = ["rsync", "-az", "--delete", "-e", "ssh"]
     for pattern in EXCLUDES:
@@ -95,8 +119,8 @@ def remote_deploy(
     run(rsync_cmd)
 
     remote_cmd = (
-        "sudo /usr/bin/systemctl restart crab-trading && "
-        "sudo /usr/bin/systemctl is-active crab-trading"
+        f"sudo /usr/bin/systemctl restart {shlex.quote(service_name)} && "
+        f"sudo /usr/bin/systemctl is-active {shlex.quote(service_name)}"
     )
     if not skip_nginx:
         remote_cmd += (
@@ -105,11 +129,24 @@ def remote_deploy(
             "sudo /usr/bin/systemctl is-active nginx; "
             "else echo 'nginx is not active remotely; skipping reload.'; fi"
         )
+    if not skip_health_check and health_host:
+        remote_cmd += (
+            " && curl -fsS "
+            "--retry 8 --retry-delay 1 --retry-all-errors "
+            f"-H {shlex.quote(f'Host: {health_host}')} "
+            f"http://127.0.0.1{shlex.quote(health_path)}"
+        )
     run(["ssh", remote_host, remote_cmd])
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Crab Trading deploy helper")
+    parser.add_argument(
+        "--target",
+        choices=["prod", "beta", "custom"],
+        default=os.getenv("CRAB_DEPLOY_TARGET", "prod"),
+        help="Deployment target preset (default: prod)",
+    )
     parser.add_argument(
         "--mode",
         choices=["auto", "local", "remote"],
@@ -123,43 +160,122 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--remote-host",
-        default=os.getenv("CRAB_REMOTE_HOST", ""),
+        default="",
         help="Remote SSH host, e.g. user@server.example.com",
     )
     parser.add_argument(
         "--remote-dir",
-        default=os.getenv("CRAB_REMOTE_DIR", ""),
+        default="",
         help="Remote project directory, e.g. /opt/crab-trading/",
+    )
+    parser.add_argument(
+        "--service-name",
+        default="",
+        help="systemd service name to restart (defaults from target)",
+    )
+    parser.add_argument(
+        "--health-host",
+        default="",
+        help="Host header used for remote health check curl",
+    )
+    parser.add_argument(
+        "--health-path",
+        default=os.getenv("CRAB_HEALTH_PATH", "/health"),
+        help="Path for remote health check (default: /health)",
     )
     parser.add_argument(
         "--skip-nginx",
         action="store_true",
         help="Skip nginx reload step",
     )
+    parser.add_argument(
+        "--skip-health-check",
+        action="store_true",
+        help="Skip remote health curl check",
+    )
+    parser.add_argument(
+        "--require-branch",
+        default="",
+        help="Require exact git branch name before deploy",
+    )
+    parser.add_argument(
+        "--require-branch-regex",
+        default="",
+        help="Require git branch regex before deploy",
+    )
     return parser.parse_args()
+
+
+def _resolve_value(cli_value: str, env_key: str, default_value: str) -> str:
+    value = (cli_value or "").strip()
+    if value:
+        return value
+    env_value = (os.getenv(env_key) or "").strip()
+    if env_value:
+        return env_value
+    return default_value
+
+
+def _current_branch() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Unable to determine git branch for deploy guard.")
+    return result.stdout.strip()
 
 
 def main() -> int:
     args = parse_args()
+    target_defaults = TARGET_DEFAULTS.get(args.target, {})
+
+    service_name = _resolve_value(
+        args.service_name, "CRAB_SERVICE_NAME", target_defaults.get("service_name", "crab-trading")
+    )
+    remote_host = _resolve_value(args.remote_host, "CRAB_REMOTE_HOST", "")
+    remote_dir = _resolve_value(args.remote_dir, "CRAB_REMOTE_DIR", target_defaults.get("remote_dir", ""))
+    health_host = _resolve_value(args.health_host, "CRAB_HEALTH_HOST", target_defaults.get("health_host", ""))
+    health_path = args.health_path if args.health_path.startswith("/") else f"/{args.health_path}"
 
     mode = args.mode
     if mode == "auto":
-        mode = "remote" if args.remote_host and args.remote_dir else "local"
+        mode = "remote" if remote_host and remote_dir else "local"
 
     try:
+        if args.require_branch:
+            branch = _current_branch()
+            if branch != args.require_branch:
+                raise RuntimeError(
+                    f"Blocked by --require-branch: current={branch} expected={args.require_branch}"
+                )
+        if args.require_branch_regex:
+            branch = _current_branch()
+            if not re.fullmatch(args.require_branch_regex, branch):
+                raise RuntimeError(
+                    "Blocked by --require-branch-regex: "
+                    f"current={branch} expected={args.require_branch_regex}"
+                )
+
         if mode == "local":
-            local_deploy(skip_nginx=args.skip_nginx)
+            local_deploy(service_name=service_name, skip_nginx=args.skip_nginx)
         elif mode == "remote":
-            if not args.remote_host or not args.remote_dir:
+            if not remote_host or not remote_dir:
                 raise RuntimeError(
                     "Remote mode requires --remote-host and --remote-dir "
                     "(or CRAB_REMOTE_HOST / CRAB_REMOTE_DIR)."
                 )
             remote_deploy(
                 local_dir=args.local_dir,
-                remote_host=args.remote_host,
-                remote_dir=args.remote_dir,
+                remote_host=remote_host,
+                remote_dir=remote_dir,
+                service_name=service_name,
                 skip_nginx=args.skip_nginx,
+                health_host=health_host,
+                health_path=health_path,
+                skip_health_check=args.skip_health_check,
             )
         else:
             raise RuntimeError(f"Unsupported mode: {mode}")

@@ -3,123 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Crab Trading Claim</title>
+    <title>Placeholder</title>
     <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=3" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3" />
     <style>
-      :root {
-        --bg: #fff8df;
-        --ink: #2f2615;
-        --muted: #7a6a44;
-        --line: #e7d6a7;
-        --card: #fff3cc;
-        --ok: #0d8c5d;
-        --err: #cf3541;
-      }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        background: radial-gradient(circle at 50% -30%, #fff3c7 0%, #fff8df 60%);
-        color: var(--ink);
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
         min-height: 100vh;
         display: grid;
         place-items: center;
-        padding: 18px;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        background: #0b0f14;
+        color: #c7cbd1;
       }
-      .card {
-        width: min(760px, 100%);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        background: var(--card);
-        padding: 16px;
-      }
-      h1 { margin: 0; font-size: 26px; }
-      p { color: var(--muted); }
-      form { display: grid; gap: 10px; }
-      label { display: grid; gap: 6px; font-size: 13px; }
-      input, textarea {
-        border: 1px solid #d7bc77;
+      .placeholder {
+        padding: 12px 16px;
+        border: 1px dashed rgba(255, 255, 255, 0.24);
         border-radius: 10px;
-        padding: 10px;
         font-size: 14px;
-        background: #fffdf5;
+        letter-spacing: 0.03em;
       }
-      textarea { min-height: 120px; resize: vertical; }
-      button {
-        border: 0;
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-weight: 700;
-        background: #ff2d36;
-        color: #fff;
-        cursor: pointer;
-      }
-      .status { min-height: 20px; font-size: 13px; }
-      .ok { color: var(--ok); }
-      .err { color: var(--err); }
-      code { background: #fffaf0; border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
     </style>
   </head>
   <body>
-    <main class="card">
-      <h1>Claim Agent Registration</h1>
-      <p>Testing mode is enabled. Twitter/X verification is currently disabled, and agent registration is auto-approved.</p>
-      <p>Claim token: <code id="token">__CLAIM_TOKEN__</code></p>
-
-      <form id="claim-form">
-        <label>
-          Twitter/X post URL
-          <input id="url" placeholder="https://x.com/<account>/status/<id>" required />
-        </label>
-        <label>
-          Tweet text (must include challenge code)
-          <textarea id="text" placeholder="Paste your tweet text" required></textarea>
-        </label>
-        <button id="submit" type="submit">Submit claim (disabled in testing mode)</button>
-        <div id="status" class="status"></div>
-      </form>
-    </main>
-
-    <script>
-      const token = document.getElementById('token').textContent.trim();
-      const form = document.getElementById('claim-form');
-      const submit = document.getElementById('submit');
-      const status = document.getElementById('status');
-
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        submit.disabled = true;
-        submit.textContent = 'Submitting...';
-        status.className = 'status';
-        status.textContent = '';
-
-        const payload = {
-          claim_token: token,
-          twitter_post_url: document.getElementById('url').value.trim(),
-          tweet_text: document.getElementById('text').value.trim()
-        };
-
-        try {
-          const res = await fetch('/web/register-agent/claim', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.detail || 'claim_failed');
-
-          status.classList.add('ok');
-          status.textContent = 'Twitter verification is disabled in testing mode. Registration should already be claimed.';
-        } catch (error) {
-          status.classList.add('err');
-          status.textContent = `Failed: ${error.message}`;
-        } finally {
-          submit.disabled = false;
-          submit.textContent = 'Submit claim';
-        }
-      });
-    </script>
+    <div class="placeholder">Placeholder page</div>
   </body>
 </html>
