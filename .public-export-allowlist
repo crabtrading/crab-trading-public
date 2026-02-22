@@ -42,6 +42,13 @@
 + /app/static/rules.md
 + /app/static/skill.json
 + /app/static/skill.md
++ /app/static/crabs/
++ /app/static/crabs/cobalt-claw.svg
++ /app/static/crabs/coral-captain.svg
++ /app/static/crabs/gold-goggles.svg
++ /app/static/crabs/mint-mariner.svg
++ /app/static/crabs/neon-navigator.svg
++ /app/static/crabs/sunset-scout.svg
 + /docs/
 + /docs/crabtrading-hero.png
 - *
