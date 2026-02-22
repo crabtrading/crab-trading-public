@@ -8,7 +8,6 @@ Modes:
 
 Targets:
 - prod: defaults to production service/path/host
-- beta: defaults to beta service/path/host
 - custom: no target defaults
 """
 
@@ -47,11 +46,6 @@ TARGET_DEFAULTS = {
         "service_name": "crab-trading",
         "remote_dir": "/opt/crab-trading/",
         "health_host": "crabtrading.ai",
-    },
-    "beta": {
-        "service_name": "crab-trading-beta",
-        "remote_dir": "/opt/crab-trading-beta/",
-        "health_host": "beta.crabtrading.ai",
     },
     "custom": {},
 }
@@ -143,7 +137,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Crab Trading deploy helper")
     parser.add_argument(
         "--target",
-        choices=["prod", "beta", "custom"],
+        choices=["prod", "custom"],
         default=os.getenv("CRAB_DEPLOY_TARGET", "prod"),
         help="Deployment target preset (default: prod)",
     )

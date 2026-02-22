@@ -166,3 +166,9 @@ class SimPolyResolveRequest(BaseModel):
 
 class AdminPurgeAgentRequest(BaseModel):
     agent_id: str = Field(..., min_length=3, max_length=128)
+
+
+class AdminPurgeOwnerAgentsRequest(BaseModel):
+    owner_id: Optional[str] = Field(default="", min_length=0, max_length=128)
+    owner_email: Optional[str] = Field(default="", min_length=0, max_length=320)
+    email: Optional[str] = Field(default="", min_length=0, max_length=320)
