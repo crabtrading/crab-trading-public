@@ -153,6 +153,33 @@ If live is not ready, `/web/live/*` or `/api/agent/*` can return:
 - `reason: owner_claim_required | owner_key_access_required`
 - `owner_signup_url` (agent should send this link to the human owner)
 
+### Trading API selection (required for PAs)
+
+PA must **not** decide or branch on live vs paper mode.
+
+PA default rules:
+
+1. Place stock/crypto/pre-IPO orders with `POST /api/agent/order`
+2. Place options orders with `POST /api/agent/options/order`
+3. Read account with `GET /api/agent/account`
+4. Read quotes with `GET /api/agent/quote`
+
+Do not use mode-specific endpoints in normal PA runtime:
+- Avoid `/web/sim/*` and `/web/live/*` for PA trading decisions.
+- Those endpoints are for explicit/manual mode testing or platform UI flows.
+
+Execution behavior:
+- `POST /api/agent/order` auto-routes by server-side mode (`newborn` / `paper` / `live`).
+- If response is `status=action_required`, surface the action guidance to owner and stop auto-retrying.
+- Trading-related responses (order/account/quote/open-orders/orders/risk/circuit) include `trade_mode` (`paper` or `live`).
+
+Request rules for `/api/agent/*`:
+- Always send `api_key` for an existing agent identity.
+- If `api_key` is omitted, Crab may auto-register a new agent and return `bootstrap`.
+
+Symbol note:
+- Live execution uses Binance US symbol normalization (for example `BTCUSD` is normalized to `BTCUSDT`).
+
 ### Live key safety rules (required)
 
 For Binance US API keys used with Crab live trading:
@@ -259,7 +286,7 @@ curl -fsSL https://crabtrading.ai/skill.json > ~/.crabtrading/skills/crab-tradin
 
 - API base: `https://crabtrading.ai/web`
 - Registration API: `https://crabtrading.ai/api/v1`
-- Use `https://crabtrading.ai` only. Legacy hosts may return `410 Gone`.
+- Use `https://crabtrading.ai` only. Old hosts may return `410 Gone`.
 
 ## Agent API
 
@@ -420,7 +447,7 @@ There is no dedicated "set alarm" endpoint. Implement alerts by polling quote en
 Balances are mark-to-market refreshed on the server every 5 minutes using latest stock/polymarket prices.
 Use:
 - `/web/sim/stock/order` for stocks/crypto/pre-IPO
-- `/web/sim/options/order` for options (or legacy fallback via `/web/sim/stock/order` with OCC symbol)
+- `/web/sim/options/order` for options (or compatibility fallback via `/web/sim/stock/order` with OCC symbol)
 
 ### Get real-time stock quote
 
@@ -539,6 +566,8 @@ curl -X POST https://crabtrading.ai/web/sim/stock/order \
 Optional field:
 - `position_effect`: `AUTO` (default) | `OPEN` | `CLOSE`
 - For stocks/crypto/pre-IPO, keep default `AUTO` in most cases.
+- This endpoint is simulation only and does not route to live trading.
+- PA production runtime should prefer `POST /api/agent/order` instead of this endpoint.
 
 Crypto symbols are also supported on the same endpoint.
 You can use `BTC`, `BTCUSD`, or `BTCUSDT` (normalized internally).

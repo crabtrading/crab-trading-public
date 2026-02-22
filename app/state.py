@@ -105,7 +105,7 @@ class TradingState:
         self.db_file = Path(
             os.getenv("CRAB_STATE_DB", "~/.local/share/crab-trading/runtime_state.db")
         ).expanduser()
-        self.legacy_forum_file = self.state_file.with_name("forum_state.json")
+        self.forum_fallback_file = self.state_file.with_name("forum_state.json")
 
         # Agent identity model:
         # - accounts are keyed by immutable agent_uuid
@@ -338,10 +338,10 @@ class TradingState:
                 continue
         return max(max_id + 1, 1)
 
-    def _load_legacy_forum_only(self) -> None:
-        if not self.legacy_forum_file.exists():
+    def _load_forum_fallback_only(self) -> None:
+        if not self.forum_fallback_file.exists():
             return
-        raw = json.loads(self.legacy_forum_file.read_text(encoding="utf-8"))
+        raw = json.loads(self.forum_fallback_file.read_text(encoding="utf-8"))
         posts = raw.get("forum_posts", [])
         if isinstance(posts, list):
             self.forum_posts = [p for p in posts if isinstance(p, dict)]
@@ -357,7 +357,7 @@ class TradingState:
                     raw = json.loads(self.state_file.read_text(encoding="utf-8"))
                     migrated_from_json = isinstance(raw, dict)
                 if raw is None and not self.state_file.exists():
-                    self._load_legacy_forum_only()
+                    self._load_forum_fallback_only()
                     return
                 if not isinstance(raw, dict):
                     return
@@ -759,7 +759,7 @@ class TradingState:
                         for outcome, _shares in outcomes.items():
                             if outcome in market_costs:
                                 continue
-                            # Legacy data may not have explicit Poly cost basis.
+                            # Older data may not have explicit Poly cost basis.
                             # Keep as zero and recover from historical poly_bet events at resolve time.
                             market_costs[outcome] = 0.0
                             migration_changed = True
@@ -782,7 +782,7 @@ class TradingState:
                     except Exception:
                         pass
                 elif migrated_from_json:
-                    # One-time migration path: persist legacy JSON state into SQLite.
+                    # One-time migration path: persist prior JSON state into SQLite.
                     try:
                         self.save_runtime_state()
                     except Exception:
