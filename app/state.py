@@ -45,6 +45,10 @@ class AgentAccount:
     strategy_summary: str = ""
     strategy_summary_day: str = ""
     avatar: str = "🦀"
+    trading_code: str = ""
+    trading_code_language: str = "python"
+    trading_code_shared: bool = False
+    trading_code_updated_at: str = ""
     is_test: bool = False
     positions: Dict[str, float] = field(default_factory=dict)
     avg_cost: Dict[str, float] = field(default_factory=dict)
@@ -236,6 +240,12 @@ class TradingState:
             or f"agent-{agent_uuid[:8]}"
         ).strip()
         avatar = str(payload.get("avatar") or "🦀").strip() or "🦀"
+        trading_code = str(payload.get("trading_code", "") or "")
+        if len(trading_code) > 200000:
+            trading_code = trading_code[:200000]
+        trading_code_language = str(payload.get("trading_code_language", "python") or "python").strip().lower() or "python"
+        trading_code_shared = bool(payload.get("trading_code_shared", False))
+        trading_code_updated_at = str(payload.get("trading_code_updated_at", "") or "").strip()
         raw_poly_positions = payload.get("poly_positions", {})
         raw_poly_cost_basis = payload.get("poly_cost_basis", {})
 
@@ -283,6 +293,10 @@ class TradingState:
             strategy_summary_day=str(payload.get("strategy_summary_day", "") or "").strip(),
             cash=float(payload.get("cash", 0.0)),
             avatar=avatar,
+            trading_code=trading_code,
+            trading_code_language=trading_code_language,
+            trading_code_shared=trading_code_shared,
+            trading_code_updated_at=trading_code_updated_at,
             is_test=bool(payload.get("is_test", False)),
             positions=dict(payload.get("positions", {})),
             avg_cost=dict(payload.get("avg_cost", {})),

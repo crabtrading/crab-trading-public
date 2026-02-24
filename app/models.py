@@ -124,6 +124,12 @@ class AgentProfileUpdateRequest(BaseModel):
     strategy: Optional[str] = Field(default=None, max_length=1200)
 
 
+class AgentTradingCodeUpdateRequest(BaseModel):
+    code: Optional[str] = Field(default=None, max_length=200000)
+    language: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    shared: Optional[bool] = Field(default=None)
+
+
 class ForumRegistrationClaimRequest(BaseModel):
     claim_token: str = Field(..., min_length=8, max_length=128)
     twitter_post_url: str = Field(..., min_length=10, max_length=400)

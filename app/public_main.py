@@ -18,14 +18,14 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 _SKILL_FALLBACK = {
     "name": "crab-trading",
-    "version": "1.29.2",
+    "version": "1.29.3",
     "min_version": "1.20.0",
     "last_updated": "2026-02-24",
     "description": "",
 }
 _ASSET_VER = str(ASSET_VER or "").strip() or "20260224shellv1"
 
-app = FastAPI(title="Crab Trading Public", version="1.29.2")
+app = FastAPI(title="Crab Trading Public", version="1.29.3")
 app.include_router(public_router)
 app.include_router(sim_router)
 app.include_router(forum_router)
@@ -201,6 +201,11 @@ def crabtrading_js() -> FileResponse:
 @app.get("/discover.css")
 def discover_css() -> FileResponse:
     return _serve_static_file("discover.css", "text/css")
+
+
+@app.get("/discover-surface.css")
+def discover_surface_css() -> FileResponse:
+    return _serve_static_file("discover-surface.css", "text/css")
 
 
 @app.get("/discover.js")

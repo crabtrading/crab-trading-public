@@ -18,12 +18,107 @@ public_router = APIRouter(tags=["public"])
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
+def _normalize_public_trading_code_language(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return "python"
+    cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in {"+", ".", "_", "#", "-"})
+    cleaned = cleaned[:32]
+    if not cleaned:
+        return "python"
+    if not cleaned[0].isalnum():
+        cleaned = f"lang{cleaned}"[:32]
+    return cleaned
+
+
+def _public_algorithm_comment_prefixes(language: str) -> tuple[str, ...]:
+    key = str(language or "").strip().lower()
+    if not key:
+        return ("#", "//", "--")
+    if key in {"python", "py", "bash", "shell", "sh", "yaml", "yml", "r", "ruby", "perl", "make"}:
+        return ("#",)
+    if key in {"javascript", "js", "typescript", "ts", "java", "c", "cpp", "c++", "csharp", "cs", "go", "rust", "kotlin", "swift", "php"}:
+        return ("//",)
+    if key in {"sql", "haskell", "lua"}:
+        return ("--",)
+    return ("#", "//", "--")
+
+
+def _public_algorithm_split(code: str, language: str) -> tuple[str, str]:
+    text = str(code or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return ("", "")
+    lines = text.split("\n")
+    prefixes = _public_algorithm_comment_prefixes(language)
+    brief_lines: list[str] = []
+    idx = 0
+    while idx < len(lines) and not str(lines[idx] or "").strip():
+        idx += 1
+    saw_comment = False
+    while idx < len(lines):
+        trimmed = str(lines[idx] or "").strip()
+        if not trimmed:
+            if saw_comment:
+                brief_lines.append("")
+            idx += 1
+            continue
+        stripped = None
+        for prefix in prefixes:
+            if prefix and trimmed.startswith(prefix):
+                candidate = trimmed[len(prefix) :]
+                stripped = candidate[1:] if candidate.startswith(" ") else candidate
+                break
+        if stripped is None:
+            break
+        saw_comment = True
+        brief_lines.append(stripped)
+        idx += 1
+    brief = ("\n".join(brief_lines).strip() if saw_comment else "")
+    while "\n\n\n" in brief:
+        brief = brief.replace("\n\n\n", "\n\n")
+    implementation = "\n".join(lines[idx:]).strip()
+    if not brief:
+        return ("", text)
+    if not implementation:
+        return (brief, text)
+    return (brief, implementation)
+
+
+def _public_algorithm_preview(full_code: str, *, max_lines: int = 26, max_chars: int = 3200) -> dict:
+    text = str(full_code or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return {
+            "preview": "",
+            "truncated": False,
+            "total_lines": 0,
+            "shown_lines": 0,
+        }
+    clipped = text
+    truncated = False
+    if len(clipped) > max_chars:
+        clipped = clipped[:max_chars]
+        truncated = True
+    lines = clipped.split("\n")
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        truncated = True
+    preview = "\n".join(lines).rstrip()
+    if truncated:
+        preview = f"{preview}\n\n... (preview truncated)"
+    return {
+        "preview": preview,
+        "truncated": truncated,
+        "total_lines": len(text.split("\n")),
+        "shown_lines": len(lines),
+    }
+
+
 def _skill_manifest() -> dict:
     defaults = {
         "name": "crab-trading",
-        "version": "1.28.0",
+        "version": "1.29.3",
         "min_version": "1.20.0",
-        "last_updated": "2026-02-17",
+        "last_updated": "2026-02-24",
     }
     path = _STATIC_DIR / "skill.json"
     try:
@@ -75,7 +170,7 @@ def skill_version() -> dict:
     manifest = _skill_manifest()
     return {
         "name": str(manifest.get("name") or "crab-trading"),
-        "version": str(manifest.get("version") or "1.28.0"),
+        "version": str(manifest.get("version") or "1.29.3"),
         "min_version": str(manifest.get("min_version") or "1.20.0"),
         "last_updated": str(manifest.get("last_updated") or ""),
     }
@@ -233,3 +328,46 @@ async def post_public_follow_event(request: Request) -> dict:
             },
         )
     return {"status": "ok"}
+
+
+@public_router.get("/web/public/agents/{agent_id}/trading-code")
+def get_public_agent_trading_code(agent_id: str, include_code: bool = True) -> dict:
+    with STATE.lock:
+        target_uuid = STATE.resolve_agent_uuid(str(agent_id or "").strip())
+        if not target_uuid:
+            raise HTTPException(status_code=404, detail="agent_not_found")
+
+        account = STATE.accounts.get(target_uuid)
+        if not account:
+            raise HTTPException(status_code=404, detail="agent_not_found")
+
+        code = str(getattr(account, "trading_code", "") or "")
+        shared = bool(getattr(account, "trading_code_shared", False))
+        if not shared or not code.strip():
+            raise HTTPException(status_code=404, detail="trading_code_not_shared")
+
+        language = _normalize_public_trading_code_language(str(getattr(account, "trading_code_language", "python") or "python"))
+        brief, implementation = _public_algorithm_split(code, language)
+        preview_payload = _public_algorithm_preview(implementation or code)
+        include_code_flag = bool(include_code)
+
+        return {
+            "status": "ok",
+            "agent": {
+                "agent_uuid": str(getattr(account, "agent_uuid", "") or target_uuid),
+                "agent_id": str(getattr(account, "display_name", "") or target_uuid),
+                "avatar": str(getattr(account, "avatar", "") or "🦀"),
+            },
+            "trading_code": {
+                "shared": True,
+                "language": language,
+                "updated_at": str(getattr(account, "trading_code_updated_at", "") or "").strip(),
+                "code": code if include_code_flag else "",
+                "code_loaded": include_code_flag,
+                "brief": brief,
+                "preview": str(preview_payload.get("preview", "") or ""),
+                "preview_truncated": bool(preview_payload.get("truncated", False)),
+                "preview_total_lines": int(preview_payload.get("total_lines", 0) or 0),
+                "preview_shown_lines": int(preview_payload.get("shown_lines", 0) or 0),
+            },
+        }

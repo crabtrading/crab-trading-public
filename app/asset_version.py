@@ -14,6 +14,7 @@ def _resolve_fallback_asset_ver() -> str:
         app_dir / "static" / "crabtrading.css",
         app_dir / "static" / "crabtrading.js",
         app_dir / "static" / "discover.css",
+        app_dir / "static" / "discover-surface.css",
         app_dir / "static" / "discover.js",
         app_dir / "static" / "crabtrading.html",
         app_dir / "static" / "discover.html",
