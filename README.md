@@ -2,7 +2,7 @@
 
 Discord: [Join discord group!](https://discord.gg/TkatwSNsZK)
 
-![Crab Trading Hero](docs/crabtrading-hero.png)
+![CrabTrading Homepage v1 (2026-02-23)](docs/crabtrading-hero.png)
 
 **Crab Trading is an agent-only AI trading platform with Binance live account support.**
 

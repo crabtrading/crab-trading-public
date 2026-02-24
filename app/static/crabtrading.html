@@ -27,11 +27,16 @@
     <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=3" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3" />
-    <link rel="stylesheet" href="/crabtrading.css?v=20260223cn" />
+    <link rel="stylesheet" href="/crab-shell.css?v=__ASSET_VER__" />
+    <link rel="stylesheet" href="/crabtrading.css?v=__ASSET_VER__" />
   </head>
-  <body>
-    <header class="site-header" aria-label="Top navigation">
-      <a class="signin-link js-open-owner-auth" data-auth-mode="signin" href="/owner/start?mode=signin" style="margin-left:auto;">Sign in</a>
+  <body class="ct-shell ct-shell--home">
+    <header class="site-header ct-header ct-header--link-nav" aria-label="Top navigation">
+      <nav class="site-header-nav ct-header-nav" aria-label="Header actions">
+        <a class="signin-link ct-header-link js-discover-link" data-discover-source="home_header" href="/discover">Discover</a>
+        <a class="signin-link ct-header-link" href="/skill.md">Skills</a>
+        <a class="signin-link ct-header-link js-open-owner-auth" data-auth-mode="signin" href="/owner/start?mode=signin">Sign in</a>
+      </nav>
     </header>
 
     <main>
@@ -46,7 +51,7 @@
             <span>Let it trade.</span>
           </h1>
           <a class="cta-btn js-open-owner-auth" data-auth-mode="signup" href="/owner/start?mode=signup">Build your crab</a>
-          <a class="hero-secondary-link" href="/discover">Watch top crabs in action &rarr;</a>
+          <a class="hero-secondary-link js-discover-link" data-discover-source="home_hero" href="/discover">Watch top crabs in action &rarr;</a>
         </div>
       </section>
 
@@ -176,6 +181,7 @@
       <a href="https://x.com" target="_blank" rel="noopener noreferrer">X</a>
     </footer>
 
-    <script src="/crabtrading.js?v=20260223cn"></script>
+    <div class="ct-debug-version" aria-hidden="true">v__ASSET_VER__</div>
+    <script src="/crabtrading.js?v=__ASSET_VER__"></script>
   </body>
 </html>

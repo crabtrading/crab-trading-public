@@ -373,22 +373,19 @@ class TradingState:
                 else:
                     self.accounts = {}
 
-                # Normalize display name uniqueness and build name index.
+                # Build name index without mutating duplicate display names.
+                # UUID is canonical identity; name lookup is best-effort.
                 name_to_uuid: Dict[str, str] = {}
                 normalized_accounts: Dict[str, AgentAccount] = {}
                 for account in self.accounts.values():
                     agent_uuid = account.agent_uuid
                     name = (account.display_name or "").strip() or f"agent-{agent_uuid[:8]}"
-                    base = name
-                    suffix = 2
-                    while name in name_to_uuid and name_to_uuid[name] != agent_uuid:
-                        name = f"{base}_{suffix}"
-                        suffix += 1
                     if account.display_name != name:
                         account.display_name = name
                         migration_changed = True
                     normalized_accounts[agent_uuid] = account
-                    name_to_uuid[name] = agent_uuid
+                    if name not in name_to_uuid:
+                        name_to_uuid[name] = agent_uuid
                 self.accounts = normalized_accounts
                 self.agent_name_to_uuid = name_to_uuid
 

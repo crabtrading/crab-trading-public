@@ -20,6 +20,7 @@
 + /app/models.py
 + /app/state.py
 + /app/public_main.py
++ /app/asset_version.py
 + /app/api/
 + /app/api/forum_routes.py
 + /app/api/public_routes.py

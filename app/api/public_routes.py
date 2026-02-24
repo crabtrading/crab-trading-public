@@ -35,15 +35,18 @@ def _skill_manifest() -> dict:
     return defaults
 
 
-def _public_follow_discovery_fallback(*, window: str, featured_limit: int, limit: int) -> dict:
+def _public_follow_discovery_fallback(*, window: str, featured_limit: int, limit: int, symbol: str = "") -> dict:
     safe_window = str(window or "7d").strip() or "7d"
     safe_featured_limit = max(0, min(int(featured_limit or 0), 20))
     safe_limit = max(1, min(int(limit or 0), 100))
+    safe_symbol = str(symbol or "").strip().upper()[:24]
     return {
         "window": safe_window,
+        "symbol": safe_symbol,
         "featured_limit": safe_featured_limit,
         "limit": safe_limit,
         "featured": [],
+        "leaders": [],
         "items": [],
         "total": 0,
     }
@@ -165,24 +168,28 @@ def get_public_follow_discovery(
     window: str = "7d",
     featured_limit: int = 3,
     limit: int = 20,
+    symbol: str = "",
 ) -> dict:
     if _public_follow_discovery_impl is None:
         return _public_follow_discovery_fallback(
             window=window,
             featured_limit=featured_limit,
             limit=limit,
+            symbol=symbol,
         )
     try:
         return _public_follow_discovery_impl(
             window=window,
             featured_limit=featured_limit,
             limit=limit,
+            symbol=symbol,
         )
     except Exception:
         return _public_follow_discovery_fallback(
             window=window,
             featured_limit=featured_limit,
             limit=limit,
+            symbol=symbol,
         )
 
 

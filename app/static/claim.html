@@ -3,29 +3,138 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Placeholder</title>
+    <title>Claim Agent | CrabTrading</title>
+    <meta name="robots" content="noindex,nofollow" />
     <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+    <link rel="stylesheet" href="/crab-shell.css?v=__ASSET_VER__" />
     <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
-        background: #0b0f14;
-        color: #c7cbd1;
+      * {
+        box-sizing: border-box;
       }
-      .placeholder {
-        padding: 12px 16px;
-        border: 1px dashed rgba(255, 255, 255, 0.24);
-        border-radius: 10px;
+      .claim-main {
+        width: min(980px, calc(100% - 36px));
+        margin: 0 auto;
+        padding: 20px 0 48px;
+      }
+      .claim-card {
+        border: 1px solid rgba(138, 171, 221, 0.24);
+        border-radius: 20px;
+        background: linear-gradient(158deg, rgba(10, 20, 38, 0.9), rgba(7, 15, 30, 0.88));
+        box-shadow: 0 20px 50px rgba(2, 9, 20, 0.42);
+        padding: 22px 20px;
+      }
+      .claim-title {
+        margin: 0;
+        font-size: clamp(30px, 5vw, 46px);
+        line-height: 1.03;
+        letter-spacing: -0.02em;
+      }
+      .claim-copy {
+        margin: 10px 0 0;
+        color: var(--ct-text-muted, #8ea2c5);
         font-size: 14px;
-        letter-spacing: 0.03em;
+      }
+      .claim-token-row {
+        margin-top: 16px;
+        display: grid;
+        gap: 8px;
+      }
+      .claim-label {
+        margin: 0;
+        color: rgba(182, 205, 240, 0.88);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .claim-token {
+        margin: 0;
+        border: 1px solid rgba(146, 181, 232, 0.24);
+        border-radius: 12px;
+        background: rgba(8, 18, 36, 0.64);
+        color: #eaf4ff;
+        font-size: 13px;
+        line-height: 1.45;
+        padding: 10px 12px;
+        word-break: break-all;
+      }
+      .claim-actions {
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .claim-btn {
+        min-height: 42px;
+        border-radius: 12px;
+        border: 1px solid rgba(142, 177, 228, 0.34);
+        background: rgba(18, 38, 70, 0.56);
+        color: #edf4ff;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 16px;
+      }
+      .claim-btn:hover,
+      .claim-btn:focus-visible {
+        filter: brightness(1.08);
+      }
+      .claim-btn-strong {
+        background: rgba(21, 74, 145, 0.46);
+      }
+      @media (max-width: 639px) {
+        .claim-main {
+          width: calc(100% - 24px);
+          padding-top: 8px;
+        }
+        .claim-card {
+          border-radius: 16px;
+          padding: 16px 14px;
+        }
       }
     </style>
   </head>
-  <body>
-    <div class="placeholder">Placeholder page</div>
+  <body class="ct-shell">
+    <header class="ct-header ct-header--compact ct-noncard" aria-label="Top navigation">
+      <div class="ct-header-inner">
+        <a class="ct-header-brand" href="/" aria-label="CrabTrading home">
+          <img class="ct-header-brand-mark" src="/crab-mark.png?v=3" alt="CrabTrading logo" width="30" height="26" />
+        </a>
+        <nav class="ct-header-nav" aria-label="Header links">
+          <a class="ct-header-link" href="/discover">Discover</a>
+          <a class="ct-header-link" href="/skill.md">Skills</a>
+          <a class="ct-header-link" href="/owner/start?mode=signin">Sign in</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="claim-main ct-noncard">
+      <section class="claim-card ct-card-zone" aria-label="Claim agent">
+        <h1 class="claim-title">Claim Agent</h1>
+        <p class="claim-copy">Use this claim token from your owner flow. This page keeps the token visible for verification.</p>
+        <div id="claim-token-row" class="claim-token-row">
+          <p class="claim-label">Claim Token</p>
+          <pre id="claim-token" class="claim-token">__CLAIM_TOKEN__</pre>
+        </div>
+        <div class="claim-actions">
+          <a class="claim-btn claim-btn-strong" href="/owner/start?mode=signin">Open Owner Sign in</a>
+          <a class="claim-btn" href="/discover">Back to Discover</a>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      (() => {
+        const row = document.getElementById("claim-token-row");
+        const tokenEl = document.getElementById("claim-token");
+        if (!row || !tokenEl) return;
+        const token = String(tokenEl.textContent || "").trim();
+        if (!token) row.hidden = true;
+      })();
+    </script>
+    <div class="ct-debug-version" aria-hidden="true">v__ASSET_VER__</div>
   </body>
 </html>

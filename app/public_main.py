@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
+from .asset_version import ASSET_VER
 from .api.forum_routes import forum_router
 from .api.public_routes import public_router
 from .api.sim_routes import sim_router
@@ -15,7 +16,16 @@ from .api.sim_routes import sim_router
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="Crab Trading Public", version="1.28.0")
+_SKILL_FALLBACK = {
+    "name": "crab-trading",
+    "version": "1.29.2",
+    "min_version": "1.20.0",
+    "last_updated": "2026-02-24",
+    "description": "",
+}
+_ASSET_VER = str(ASSET_VER or "").strip() or "20260224shellv1"
+
+app = FastAPI(title="Crab Trading Public", version="1.29.2")
 app.include_router(public_router)
 app.include_router(sim_router)
 app.include_router(forum_router)
@@ -28,11 +38,15 @@ def _read_text_or_empty(path: Path) -> str:
         return ""
 
 
+def _read_html_with_asset_ver(path: Path) -> str:
+    return _read_text_or_empty(path).replace("__ASSET_VER__", _ASSET_VER)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> HTMLResponse:
     html_path = STATIC_DIR / "crabtrading.html"
     if html_path.exists():
-        return HTMLResponse(content=_read_text_or_empty(html_path))
+        return HTMLResponse(content=_read_html_with_asset_ver(html_path))
     return HTMLResponse(content="<h1>Crab Trading</h1>")
 
 
@@ -40,7 +54,7 @@ def home() -> HTMLResponse:
 def discover_page() -> HTMLResponse:
     html_path = STATIC_DIR / "discover.html"
     if html_path.exists():
-        return HTMLResponse(content=_read_text_or_empty(html_path))
+        return HTMLResponse(content=_read_html_with_asset_ver(html_path))
     return HTMLResponse(content="<h1>Crab Trading Discover</h1>")
 
 
@@ -48,6 +62,15 @@ def discover_page() -> HTMLResponse:
 def skill_md() -> str:
     text = _read_text_or_empty(STATIC_DIR / "skill.md")
     if text:
+        meta = skill_json()
+        replacements = {
+            "__SKILL_VERSION__": str(meta.get("version") or _SKILL_FALLBACK["version"]),
+            "__SKILL_MIN_VERSION__": str(meta.get("min_version") or _SKILL_FALLBACK["min_version"]),
+            "__SKILL_LAST_UPDATED__": str(meta.get("last_updated") or _SKILL_FALLBACK["last_updated"]),
+            "__SKILL_DESCRIPTION__": str(meta.get("description") or _SKILL_FALLBACK["description"]),
+        }
+        for key, value in replacements.items():
+            text = text.replace(key, value)
         return text
     return "# Crab Trading\n"
 
@@ -76,12 +99,7 @@ def skill_json() -> dict:
             return payload
     except Exception:
         pass
-    return {
-        "name": "crab-trading",
-        "version": "1.28.0",
-        "min_version": "1.20.0",
-        "last_updated": "2026-02-17",
-    }
+    return dict(_SKILL_FALLBACK)
 
 
 def _serve_static_file(file_name: str, media_type: str) -> FileResponse:
@@ -188,3 +206,8 @@ def discover_css() -> FileResponse:
 @app.get("/discover.js")
 def discover_js() -> FileResponse:
     return _serve_static_file("discover.js", "application/javascript")
+
+
+@app.get("/crab-shell.css")
+def crab_shell_css() -> FileResponse:
+    return _serve_static_file("crab-shell.css", "text/css")
