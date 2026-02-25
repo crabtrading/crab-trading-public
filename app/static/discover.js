@@ -189,12 +189,12 @@
   }
 
   function formatSignedGainMoney(value) {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return "";
+    const num = toFiniteNumber(value);
+    if (num == null) return "";
     const abs = Math.abs(num);
-    if (abs < 0.000001) return "$0";
+    if (abs < 0.000001) return "$0.00";
     const sign = num > 0 ? "+" : "-";
-    return `${sign}$${abs.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    return `${sign}$${abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
   function formatQuantity(value) {
@@ -600,37 +600,17 @@
       data.settled_pnl,
       data.realized_pnl,
       data.total_profit_generated_usd,
-      data.net_pnl,
-      data.ranking_score,
     ];
     for (const candidate of candidates) {
       const num = toFiniteNumber(candidate);
       if (num == null) continue;
       return num;
     }
-
-    const balanceUsd = toBalanceUsd(data);
-    if (balanceUsd == null) return null;
-
-    const startBalanceCandidates = [
-      data.start_balance_usd,
-      data.start_balance,
-      data.initial_balance_usd,
-      data.initial_balance,
-    ];
-    for (const candidate of startBalanceCandidates) {
-      const startBalance = toFiniteNumber(candidate);
-      if (startBalance == null || startBalance <= 0) continue;
-      return balanceUsd - startBalance;
-    }
-
-    const returnPct = toFiniteNumber(data.return_pct);
-    if (returnPct == null) return null;
-    const denominator = 1 + (returnPct / 100);
-    if (!Number.isFinite(denominator) || Math.abs(denominator) < 1e-9) return null;
-    const startBalance = balanceUsd / denominator;
-    if (!Number.isFinite(startBalance)) return null;
-    return balanceUsd - startBalance;
+    const stockRealized = toFiniteNumber(data.stock_realized_pnl);
+    const polyRealized = toFiniteNumber(data.poly_realized_pnl);
+    const kalshiRealized = toFiniteNumber(data.kalshi_realized_pnl);
+    if (stockRealized == null && polyRealized == null && kalshiRealized == null) return null;
+    return (stockRealized || 0) + (polyRealized || 0) + (kalshiRealized || 0);
   }
 
   function mapDiscoveryRows(rows, windowName) {
@@ -917,9 +897,9 @@
     const symbols = normalizeSymbols(row.symbols || []);
     const primarySymbol = symbols[0] || "Multi-Asset";
     const balanceText = formatMoney(row.balance_usd) || "--";
-    const realizedGainValue = Number(row.realized_gain_usd);
+    const realizedGainValue = toFiniteNumber(row.realized_gain_usd);
     const realizedGainText = formatSignedGainMoney(realizedGainValue) || "--";
-    const realizedGainClass = Number.isFinite(realizedGainValue)
+    const realizedGainClass = realizedGainValue != null
       ? (realizedGainValue > 0 ? "is-up" : (realizedGainValue < 0 ? "is-down" : "is-flat"))
       : "";
     const isCodeLoading = !!state.codeLoadingByAgent[key];
