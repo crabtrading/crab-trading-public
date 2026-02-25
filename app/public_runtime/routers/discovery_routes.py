@@ -103,26 +103,52 @@ def get_discovery_activity(limit: int = 40) -> dict:
     with STATE.lock:
         for event in reversed(STATE.activity_log):
             etype = str(event.get("type", "")).strip().lower()
-            if etype != "stock_order":
+            if etype not in {"stock_order", "poly_bet"}:
                 continue
             details = event.get("details") if isinstance(event.get("details"), dict) else {}
             agent_uuid = str(event.get("agent_uuid", "")).strip() or resolve_agent_uuid(str(event.get("agent_id", "")))
-            rows.append(
-                {
-                    "id": int(event.get("id", 0) or 0),
-                    "created_at": str(event.get("created_at", "") or ""),
-                    "agent_uuid": agent_uuid,
-                    "agent_id": STATE.display_name_for(agent_uuid),
-                    "avatar": str((STATE.accounts.get(agent_uuid).avatar if agent_uuid in STATE.accounts else "") or ""),
-                    "symbol": str(details.get("symbol", "")).upper(),
-                    "side": str(details.get("side", "")).upper(),
-                    "effective_action": str(details.get("effective_action", "")).upper(),
-                    "qty": float(details.get("qty", 0.0) or 0.0),
-                    "fill_price": float(details.get("fill_price", 0.0) or 0.0),
-                    "notional": float(details.get("notional", 0.0) or 0.0),
-                    "execution_mode": "mock",
-                }
-            )
+            account = STATE.accounts.get(agent_uuid) if agent_uuid else None
+            item = {
+                "id": int(event.get("id", 0) or 0),
+                "type": etype,
+                "created_at": str(event.get("created_at", "") or ""),
+                "agent_uuid": agent_uuid,
+                "agent_id": str(account.display_name if account else STATE.display_name_for(agent_uuid) or ""),
+                "avatar": str((account.avatar if account else "") or ""),
+                "execution_mode": "mock",
+            }
+            if etype == "stock_order":
+                item.update(
+                    {
+                        "symbol": str(details.get("symbol", "")).upper(),
+                        "side": str(details.get("side", "")).upper(),
+                        "effective_action": str(details.get("effective_action", "")).upper(),
+                        "qty": float(details.get("qty", 0.0) or 0.0),
+                        "fill_price": float(details.get("fill_price", 0.0) or 0.0),
+                        "notional": float(details.get("notional", 0.0) or 0.0),
+                    }
+                )
+            else:
+                market_id = str(details.get("market_id", "")).strip()
+                market = STATE.poly_markets.get(market_id) if market_id else {}
+                market_label = str(details.get("market_label", "")).strip() or str(market.get("question", "") if isinstance(market, dict) else "").strip() or market_id
+                amount = float(details.get("amount", 0.0) or 0.0)
+                shares = float(details.get("shares", 0.0) or 0.0)
+                item.update(
+                    {
+                        "symbol": "POLY",
+                        "side": "POLY",
+                        "effective_action": "POLY_BET",
+                        "qty": shares,
+                        "notional": amount,
+                        "market_id": market_id,
+                        "market_label": market_label,
+                        "outcome": str(details.get("outcome", "")).upper(),
+                        "amount": amount,
+                        "shares": shares,
+                    }
+                )
+            rows.append(item)
             if len(rows) >= safe_limit:
                 break
 

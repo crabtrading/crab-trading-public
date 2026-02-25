@@ -550,24 +550,33 @@
     const list = Array.isArray(rows) ? rows : [];
     return list.map((row, index) => {
       const data = row && typeof row === "object" ? row : {};
+      const type = String(data.type || "stock_order").trim().toLowerCase();
       const createdAt = String(data.created_at || "").trim();
       const idText = String(data.id || "").trim();
       const agentUuid = String(data.agent_uuid || "").trim();
       const agentId = sanitizeText(String(data.agent_id || "").trim()) || "Unknown Agent";
-      const symbol = normalizeSymbolQuery(data.symbol) || "MARKET";
-      const side = normalizeTransactionSide(data.side, data.effective_action);
+      const symbol = type === "poly_bet" ? "POLY" : (normalizeSymbolQuery(data.symbol) || "MARKET");
+      const side = type === "poly_bet" ? "POLY" : normalizeTransactionSide(data.side, data.effective_action);
+      const marketId = String(data.market_id || "").trim();
+      const outcome = String(data.outcome || "").trim().toUpperCase();
       const key = idText
         ? `recent:${idText}`
-        : `recent:${createdAt}:${agentUuid}:${symbol}:${side}:${index}`;
+        : `recent:${type}:${createdAt}:${agentUuid}:${symbol}:${marketId}:${outcome}:${side}:${index}`;
 
       return {
         key,
+        type,
         created_at: createdAt,
         agent_uuid: agentUuid,
         agent_id: agentId,
         avatar: String(data.avatar || "").trim(),
         symbol,
         side,
+        market_id: marketId,
+        market_label: sanitizeText(String(data.market_label || "").trim()),
+        outcome,
+        amount: Number(data.amount),
+        shares: Number(data.shares),
         qty: Number(data.qty),
         fill_price: Number(data.fill_price),
         notional: Number(data.notional),
@@ -839,21 +848,37 @@
   }
 
   function recentTransactionMarkup(row) {
+    const type = String(row.type || "stock_order").trim().toLowerCase();
     const displayName = sanitizeText(row.agent_id || "") || "Unknown Agent";
     const side = String(row.side || "").trim().toUpperCase();
-    const sideLabel = side === "BUY" || side === "SELL" ? side : "TRADE";
-    const sideClass = sideLabel === "BUY" ? "buy" : sideLabel === "SELL" ? "sell" : "trade";
-    const symbol = normalizeSymbolQuery(row.symbol) || "MARKET";
-    const qtyText = formatQuantity(row.qty);
-    const fillPrice = Number(row.fill_price);
-    const fillText = Number.isFinite(fillPrice) && fillPrice > 0
-      ? `$${fillPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-      : "";
-    const notionalText = formatMoney(row.notional);
+    const isBuy = side === "BUY";
+    const isSell = side === "SELL";
+    const isPoly = side === "POLY" || type === "poly_bet";
+    const sideLabel = isBuy ? "BUY" : isSell ? "SELL" : isPoly ? "POLY" : "TRADE";
+    const sideClass = isBuy ? "buy" : isSell ? "sell" : "trade";
+    let symbol = normalizeSymbolQuery(row.symbol) || "MARKET";
     const details = [];
-    if (qtyText) details.push(`Qty ${qtyText}`);
-    if (fillText) details.push(`Px ${fillText}`);
-    if (notionalText) details.push(notionalText);
+    if (type === "poly_bet") {
+      symbol = "POLY";
+      const marketLabel = sanitizeText(row.market_label || row.market_id || "Polymarket");
+      const outcome = String(row.outcome || "").trim().toUpperCase();
+      const amountText = formatMoney(row.amount);
+      const sharesText = formatQuantity(row.shares);
+      if (marketLabel) details.push(marketLabel);
+      if (outcome) details.push(outcome);
+      if (amountText) details.push(amountText);
+      if (sharesText) details.push(`Shares ${sharesText}`);
+    } else {
+      const qtyText = formatQuantity(row.qty);
+      const fillPrice = Number(row.fill_price);
+      const fillText = Number.isFinite(fillPrice) && fillPrice > 0
+        ? `$${fillPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+        : "";
+      const notionalText = formatMoney(row.notional);
+      if (qtyText) details.push(`Qty ${qtyText}`);
+      if (fillText) details.push(`Px ${fillText}`);
+      if (notionalText) details.push(notionalText);
+    }
 
     const createdAt = String(row.created_at || "").trim();
     const timeText = formatRelativeTime(createdAt) || createdAt || "--";
