@@ -53,8 +53,11 @@ class AgentAccount:
     positions: Dict[str, float] = field(default_factory=dict)
     avg_cost: Dict[str, float] = field(default_factory=dict)
     realized_pnl: float = 0.0
+    cash_locked: float = 0.0
     poly_positions: Dict[str, Dict[str, float]] = field(default_factory=dict)
     poly_cost_basis: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    poly_fee_by_market: Dict[str, float] = field(default_factory=dict)
+    poly_fee_paid: float = 0.0
     poly_realized_pnl: float = 0.0
     blocked: bool = False
 
@@ -149,15 +152,31 @@ class TradingState:
                 "market_id": "poly-us-recession-2026",
                 "question": "Will the US enter recession in 2026?",
                 "outcomes": {"YES": 0.42, "NO": 0.58},
+                "closed": False,
+                "condition_id": "",
+                "resolution_source": "",
+                "clob_token_ids": [],
                 "resolved": False,
                 "winning_outcome": "",
+                "likely_winner": "",
+                "last_checked_at": "",
+                "resolved_at": "",
+                "settlement_status": "",
             },
             "poly-btc-150k-2026": {
                 "market_id": "poly-btc-150k-2026",
                 "question": "Will BTC touch 150k before 2027?",
                 "outcomes": {"YES": 0.35, "NO": 0.65},
+                "closed": False,
+                "condition_id": "",
+                "resolution_source": "",
+                "clob_token_ids": [],
                 "resolved": False,
                 "winning_outcome": "",
+                "likely_winner": "",
+                "last_checked_at": "",
+                "resolved_at": "",
+                "settlement_status": "",
             },
         }
         self.activity_log: list[dict] = []
@@ -248,6 +267,7 @@ class TradingState:
         trading_code_updated_at = str(payload.get("trading_code_updated_at", "") or "").strip()
         raw_poly_positions = payload.get("poly_positions", {})
         raw_poly_cost_basis = payload.get("poly_cost_basis", {})
+        raw_poly_fee_by_market = payload.get("poly_fee_by_market", {})
 
         poly_positions: Dict[str, Dict[str, float]] = {}
         if isinstance(raw_poly_positions, dict):
@@ -277,6 +297,17 @@ class TradingState:
                 if normalized_costs:
                     poly_cost_basis[str(market_id)] = normalized_costs
 
+        poly_fee_by_market: Dict[str, float] = {}
+        if isinstance(raw_poly_fee_by_market, dict):
+            for market_id, fee_amount in raw_poly_fee_by_market.items():
+                market_key = str(market_id).strip()
+                if not market_key:
+                    continue
+                try:
+                    poly_fee_by_market[market_key] = max(0.0, float(fee_amount or 0.0))
+                except Exception:
+                    continue
+
         return AgentAccount(
             agent_uuid=agent_uuid,
             display_name=display_name,
@@ -301,8 +332,11 @@ class TradingState:
             positions=dict(payload.get("positions", {})),
             avg_cost=dict(payload.get("avg_cost", {})),
             realized_pnl=float(payload.get("realized_pnl", 0.0)),
+            cash_locked=max(0.0, float(payload.get("cash_locked", 0.0) or 0.0)),
             poly_positions=poly_positions,
             poly_cost_basis=poly_cost_basis,
+            poly_fee_by_market=poly_fee_by_market,
+            poly_fee_paid=max(0.0, float(payload.get("poly_fee_paid", 0.0) or 0.0)),
             poly_realized_pnl=float(payload.get("poly_realized_pnl", 0.0)),
             blocked=bool(payload.get("blocked", False)),
         )
@@ -759,6 +793,15 @@ class TradingState:
                     if not isinstance(account.poly_cost_basis, dict):
                         account.poly_cost_basis = {}
                         migration_changed = True
+                    if not isinstance(account.poly_fee_by_market, dict):
+                        account.poly_fee_by_market = {}
+                        migration_changed = True
+                    if float(getattr(account, "cash_locked", 0.0) or 0.0) < 0.0:
+                        account.cash_locked = 0.0
+                        migration_changed = True
+                    if float(getattr(account, "poly_fee_paid", 0.0) or 0.0) < 0.0:
+                        account.poly_fee_paid = 0.0
+                        migration_changed = True
                     for market_id, outcomes in account.poly_positions.items():
                         if not isinstance(outcomes, dict):
                             continue
@@ -774,8 +817,55 @@ class TradingState:
                             # Keep as zero and recover from historical poly_bet events at resolve time.
                             market_costs[outcome] = 0.0
                             migration_changed = True
+                        if market_id not in account.poly_fee_by_market:
+                            account.poly_fee_by_market[market_id] = 0.0
+                            migration_changed = True
                     if account.is_test:
                         self.test_agents.add(agent_uuid)
+
+                if not isinstance(self.poly_markets, dict):
+                    self.poly_markets = {}
+                    migration_changed = True
+                else:
+                    for market_id, market in list(self.poly_markets.items()):
+                        if not isinstance(market, dict):
+                            continue
+                        market_changed = False
+                        condition_id = str(
+                            market.get("condition_id")
+                            or market.get("conditionId")
+                            or ""
+                        ).strip()
+                        if str(market.get("condition_id", "")).strip() != condition_id:
+                            market["condition_id"] = condition_id
+                            market_changed = True
+                        if "closed" not in market:
+                            market["closed"] = bool(market.get("closedTime"))
+                            market_changed = True
+                        if "resolution_source" not in market:
+                            market["resolution_source"] = str(market.get("resolutionSource", "") or "").strip()
+                            market_changed = True
+                        if "clob_token_ids" not in market:
+                            market["clob_token_ids"] = []
+                            market_changed = True
+                        elif not isinstance(market.get("clob_token_ids"), list):
+                            market["clob_token_ids"] = []
+                            market_changed = True
+                        if "likely_winner" not in market:
+                            market["likely_winner"] = ""
+                            market_changed = True
+                        if "last_checked_at" not in market:
+                            market["last_checked_at"] = ""
+                            market_changed = True
+                        if "resolved_at" not in market:
+                            market["resolved_at"] = ""
+                            market_changed = True
+                        if "settlement_status" not in market:
+                            market["settlement_status"] = "settled" if bool(market.get("resolved")) else ""
+                            market_changed = True
+                        if market_changed:
+                            self.poly_markets[str(market_id)] = market
+                            migration_changed = True
                 for post in self.forum_posts:
                     if bool(post.get("is_test")):
                         agent_uuid = str(post.get("agent_uuid", "")).strip()

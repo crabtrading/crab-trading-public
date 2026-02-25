@@ -103,7 +103,7 @@ def get_discovery_activity(limit: int = 40) -> dict:
     with STATE.lock:
         for event in reversed(STATE.activity_log):
             etype = str(event.get("type", "")).strip().lower()
-            if etype not in {"stock_order", "poly_bet"}:
+            if etype not in {"stock_order", "poly_bet", "poly_resolved"}:
                 continue
             details = event.get("details") if isinstance(event.get("details"), dict) else {}
             agent_uuid = str(event.get("agent_uuid", "")).strip() or resolve_agent_uuid(str(event.get("agent_id", "")))
@@ -128,7 +128,7 @@ def get_discovery_activity(limit: int = 40) -> dict:
                         "notional": float(details.get("notional", 0.0) or 0.0),
                     }
                 )
-            else:
+            elif etype == "poly_bet":
                 market_id = str(details.get("market_id", "")).strip()
                 market = STATE.poly_markets.get(market_id) if market_id else {}
                 market_label = str(details.get("market_label", "")).strip() or str(market.get("question", "") if isinstance(market, dict) else "").strip() or market_id
@@ -146,6 +146,28 @@ def get_discovery_activity(limit: int = 40) -> dict:
                         "outcome": str(details.get("outcome", "")).upper(),
                         "amount": amount,
                         "shares": shares,
+                    }
+                )
+            else:
+                market_id = str(details.get("market_id", "")).strip()
+                market = STATE.poly_markets.get(market_id) if market_id else {}
+                market_label = str(details.get("market_label", "")).strip() or str(market.get("question", "") if isinstance(market, dict) else "").strip() or market_id
+                payout = float(details.get("payout", 0.0) or 0.0)
+                cost_basis = float(details.get("cost_basis", 0.0) or 0.0)
+                realized = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
+                item.update(
+                    {
+                        "symbol": "POLY",
+                        "side": "POLY",
+                        "effective_action": "POLY_RESOLVED",
+                        "qty": 0.0,
+                        "notional": payout,
+                        "market_id": market_id,
+                        "market_label": market_label,
+                        "winning_outcome": str(details.get("winning_outcome", "")).upper(),
+                        "payout": payout,
+                        "cost_basis": cost_basis,
+                        "realized_gross": realized,
                     }
                 )
             rows.append(item)

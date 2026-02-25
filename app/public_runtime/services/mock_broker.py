@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -10,6 +11,17 @@ from ...state import STATE
 from .common import resolve_agent_uuid, valuation_for_account
 
 _ORDER_SEQ = itertools.count(1)
+try:
+    _POLY_TAKER_FEE = float(os.getenv("CRAB_POLY_TAKER_FEE", "0.001") or 0.001)
+except (TypeError, ValueError):
+    _POLY_TAKER_FEE = 0.001
+_POLY_TAKER_FEE = max(0.0, min(0.05, _POLY_TAKER_FEE))
+
+try:
+    _POLY_SLIPPAGE = float(os.getenv("CRAB_POLY_SLIPPAGE", "0.003") or 0.003)
+except (TypeError, ValueError):
+    _POLY_SLIPPAGE = 0.003
+_POLY_SLIPPAGE = max(0.0, min(0.2, _POLY_SLIPPAGE))
 
 
 def _synthetic_price(symbol: str) -> float:
@@ -193,6 +205,14 @@ def list_poly_markets() -> list[dict[str, Any]]:
     for row in rows:
         row.setdefault("resolved", False)
         row.setdefault("winning_outcome", "")
+        row.setdefault("closed", False)
+        row.setdefault("condition_id", "")
+        row.setdefault("resolution_source", "")
+        row.setdefault("clob_token_ids", [])
+        row.setdefault("last_checked_at", "")
+        row.setdefault("resolved_at", "")
+        row.setdefault("likely_winner", "")
+        row.setdefault("settlement_status", "settled" if bool(row.get("resolved")) else "")
     rows.sort(key=lambda item: str(item.get("market_id", "")))
     return rows
 
@@ -217,23 +237,40 @@ def place_poly_bet(*, agent_uuid: str, market_id: str, outcome: str, amount: flo
             raise HTTPException(status_code=404, detail="market_not_found")
         if bool(market.get("resolved")):
             raise HTTPException(status_code=400, detail="market_already_resolved")
+        if bool(market.get("closed")):
+            raise HTTPException(status_code=400, detail="market_closed")
         outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), dict) else {}
-        odds = outcomes.get(safe_outcome)
+        odds = None
+        for key, value in outcomes.items():
+            if str(key or "").strip().upper() != safe_outcome:
+                continue
+            odds = value
+            break
         if not isinstance(odds, (int, float)) or float(odds) <= 0:
             raise HTTPException(status_code=400, detail="invalid_outcome")
-        if float(account.cash) < safe_amount:
+        effective_price = float(odds) * (1.0 + float(_POLY_SLIPPAGE))
+        if effective_price <= 0.0:
+            raise HTTPException(status_code=400, detail="invalid_effective_price")
+        fee = float(safe_amount) * float(_POLY_TAKER_FEE)
+        required_cash = float(safe_amount) + fee
+        if float(account.cash) < required_cash:
             raise HTTPException(status_code=400, detail="insufficient_cash")
 
-        shares = float(safe_amount / float(odds))
-        account.cash = float(account.cash) - safe_amount
+        shares = float(safe_amount / effective_price)
+        account.cash = float(account.cash) - required_cash
+        account.cash_locked = max(0.0, float(getattr(account, "cash_locked", 0.0) or 0.0)) + float(safe_amount)
+        account.poly_fee_paid = max(0.0, float(getattr(account, "poly_fee_paid", 0.0) or 0.0)) + fee
 
         if safe_market_id not in account.poly_positions:
             account.poly_positions[safe_market_id] = {}
         if safe_market_id not in account.poly_cost_basis:
             account.poly_cost_basis[safe_market_id] = {}
+        if not isinstance(getattr(account, "poly_fee_by_market", None), dict):
+            account.poly_fee_by_market = {}
 
         account.poly_positions[safe_market_id][safe_outcome] = float(account.poly_positions[safe_market_id].get(safe_outcome, 0.0) or 0.0) + shares
         account.poly_cost_basis[safe_market_id][safe_outcome] = float(account.poly_cost_basis[safe_market_id].get(safe_outcome, 0.0) or 0.0) + safe_amount
+        account.poly_fee_by_market[safe_market_id] = float(account.poly_fee_by_market.get(safe_market_id, 0.0) or 0.0) + fee
 
         event = STATE.record_operation(
             "poly_bet",
@@ -244,6 +281,11 @@ def place_poly_bet(*, agent_uuid: str, market_id: str, outcome: str, amount: flo
                 "outcome": safe_outcome,
                 "amount": safe_amount,
                 "shares": shares,
+                "quote_price": float(odds),
+                "effective_price": effective_price,
+                "slippage": float(_POLY_SLIPPAGE),
+                "fee": fee,
+                "lock_amount": float(safe_amount),
                 "execution_mode": "mock",
             },
         )
@@ -256,6 +298,11 @@ def place_poly_bet(*, agent_uuid: str, market_id: str, outcome: str, amount: flo
             "outcome": safe_outcome,
             "amount": safe_amount,
             "shares": shares,
+            "quote_price": round(float(odds), 6),
+            "effective_price": round(effective_price, 6),
+            "slippage": round(float(_POLY_SLIPPAGE), 6),
+            "fee": round(fee, 6),
+            "lock_amount": round(float(safe_amount), 6),
             "status": "ACCEPTED",
             "created_at": str(event.get("created_at", "") or datetime.now(timezone.utc).isoformat()),
         },

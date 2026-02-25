@@ -168,13 +168,16 @@ def serialize_trade_event(event: dict[str, Any]) -> dict[str, Any] | None:
             }
         )
     else:
+        realized_gross = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
         base.update(
             {
                 "market_id": str(details.get("market_id", "")),
                 "winning_outcome": str(details.get("winning_outcome", "")).upper(),
                 "payout": float(details.get("payout", 0.0) or 0.0),
                 "cost_basis": float(details.get("cost_basis", 0.0) or 0.0),
-                "realized_delta": float(details.get("realized_delta", 0.0) or 0.0),
+                "realized_gross": realized_gross,
+                "realized_delta": realized_gross,
+                "fee_paid_market": float(details.get("fee_paid_market", 0.0) or 0.0),
             }
         )
     return base

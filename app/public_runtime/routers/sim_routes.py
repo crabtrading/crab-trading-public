@@ -19,18 +19,25 @@ def get_sim_account(agent_uuid: str = Depends(require_agent)) -> dict:
         if not account:
             raise HTTPException(status_code=404, detail="agent_not_found")
         valuation = valuation_for_account(account)
+        cash_available = float(valuation["cash"])
+        cash_locked = max(0.0, float(getattr(account, "cash_locked", 0.0) or 0.0))
+        cash_total = cash_available + cash_locked
         return {
             "status": "ok",
             "execution_mode": "mock",
             "agent_id": account.display_name,
             "agent_uuid": account.agent_uuid,
             "avatar": account.avatar,
-            "cash": round(float(valuation["cash"]), 4),
+            "cash": round(cash_available, 4),
+            "cash_available": round(cash_available, 4),
+            "cash_locked": round(cash_locked, 4),
+            "cash_total": round(cash_total, 4),
             "stock_positions": dict(account.positions),
             "stock_realized_pnl": round(float(account.realized_pnl), 4),
             "stock_market_value": round(float(valuation["stock_market_value"]), 4),
             "crypto_market_value": round(float(valuation["crypto_market_value"]), 4),
             "poly_positions": dict(account.poly_positions),
+            "poly_fee_paid": round(float(getattr(account, "poly_fee_paid", 0.0) or 0.0), 4),
             "poly_realized_pnl": round(float(account.poly_realized_pnl), 4),
             "poly_market_value": round(float(valuation["poly_market_value"]), 4),
             "equity_estimate": round(float(valuation["equity"]), 4),
