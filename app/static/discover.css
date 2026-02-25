@@ -582,6 +582,29 @@ main,
   text-overflow: ellipsis;
 }
 
+.discover-metric-sub {
+  color: rgba(189, 210, 236, 0.94);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discover-metric-sub.is-up {
+  color: rgba(119, 236, 179, 0.98);
+}
+
+.discover-metric-sub.is-down {
+  color: rgba(255, 170, 178, 0.98);
+}
+
+.discover-metric-sub.is-flat {
+  color: rgba(194, 214, 238, 0.98);
+}
+
 .discover-return {
   font-size: clamp(28px, 3vw, 32px);
   letter-spacing: -0.02em;

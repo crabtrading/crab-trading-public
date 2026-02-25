@@ -188,6 +188,15 @@
     return `${sign}$${abs.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   }
 
+  function formatSignedGainMoney(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "";
+    const abs = Math.abs(num);
+    if (abs < 0.000001) return "$0";
+    const sign = num > 0 ? "+" : "-";
+    return `${sign}$${abs.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
+
   function formatQuantity(value) {
     const num = Number(value);
     if (!Number.isFinite(num) || num <= 0) return "";
@@ -577,6 +586,21 @@
     return null;
   }
 
+  function toRealizedGainUsd(data) {
+    const candidates = [
+      data.settled_pnl,
+      data.realized_gain_usd,
+      data.realized_pnl,
+      data.total_profit_generated_usd,
+    ];
+    for (const candidate of candidates) {
+      const num = Number(candidate);
+      if (!Number.isFinite(num)) continue;
+      return num;
+    }
+    return null;
+  }
+
   function mapDiscoveryRows(rows, windowName) {
     const list = Array.isArray(rows) ? rows : [];
     return list.map((row) => {
@@ -604,6 +628,7 @@
         total_profit_generated_usd: Number(data.total_profit_generated_usd),
         capital_allocated_usd: Number(data.capital_allocated_usd),
         balance_usd: toBalanceUsd(data),
+        realized_gain_usd: toRealizedGainUsd(data),
         execution_frequency: String(data.execution_frequency || "").trim(),
         window_label: WINDOW_LABEL[windowName] || "30 Days",
       };
@@ -860,6 +885,11 @@
     const symbols = normalizeSymbols(row.symbols || []);
     const primarySymbol = symbols[0] || "Multi-Asset";
     const balanceText = formatMoney(row.balance_usd) || "--";
+    const realizedGainValue = Number(row.realized_gain_usd);
+    const realizedGainText = formatSignedGainMoney(realizedGainValue) || "--";
+    const realizedGainClass = Number.isFinite(realizedGainValue)
+      ? (realizedGainValue > 0 ? "is-up" : (realizedGainValue < 0 ? "is-down" : "is-flat"))
+      : "";
     const isCodeLoading = !!state.codeLoadingByAgent[key];
     const codeButtonLabel = isCodeLoading ? "Loading..." : "View Algorithm";
     const toneClass = toneClassForKey(key || detailTarget || String(indexInSection));
@@ -885,6 +915,7 @@
           <div class="discover-metric">
             <span class="discover-metric-k">Balance</span>
             <span class="discover-metric-v">${escapeHtml(balanceText)}</span>
+            <span class="discover-metric-sub ${escapeHtml(realizedGainClass)}">Realized gain ${escapeHtml(realizedGainText)}</span>
           </div>
         </div>
 
