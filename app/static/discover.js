@@ -566,6 +566,14 @@
   }
 
   function toFiniteNumber(value) {
+    if (value == null) return null;
+    if (typeof value === "boolean") return null;
+    if (typeof value === "string") {
+      const text = value.trim();
+      if (!text) return null;
+      const num = Number(text);
+      return Number.isFinite(num) ? num : null;
+    }
     const num = Number(value);
     return Number.isFinite(num) ? num : null;
   }
@@ -579,8 +587,8 @@
       data.aum,
     ];
     for (const candidate of candidates) {
-      const num = Number(candidate);
-      if (!Number.isFinite(num)) continue;
+      const num = toFiniteNumber(candidate);
+      if (num == null) continue;
       return num;
     }
     return null;
@@ -588,17 +596,41 @@
 
   function toRealizedGainUsd(data) {
     const candidates = [
-      data.settled_pnl,
       data.realized_gain_usd,
+      data.settled_pnl,
       data.realized_pnl,
       data.total_profit_generated_usd,
+      data.net_pnl,
+      data.ranking_score,
     ];
     for (const candidate of candidates) {
-      const num = Number(candidate);
-      if (!Number.isFinite(num)) continue;
+      const num = toFiniteNumber(candidate);
+      if (num == null) continue;
       return num;
     }
-    return null;
+
+    const balanceUsd = toBalanceUsd(data);
+    if (balanceUsd == null) return null;
+
+    const startBalanceCandidates = [
+      data.start_balance_usd,
+      data.start_balance,
+      data.initial_balance_usd,
+      data.initial_balance,
+    ];
+    for (const candidate of startBalanceCandidates) {
+      const startBalance = toFiniteNumber(candidate);
+      if (startBalance == null || startBalance <= 0) continue;
+      return balanceUsd - startBalance;
+    }
+
+    const returnPct = toFiniteNumber(data.return_pct);
+    if (returnPct == null) return null;
+    const denominator = 1 + (returnPct / 100);
+    if (!Number.isFinite(denominator) || Math.abs(denominator) < 1e-9) return null;
+    const startBalance = balanceUsd / denominator;
+    if (!Number.isFinite(startBalance)) return null;
+    return balanceUsd - startBalance;
   }
 
   function mapDiscoveryRows(rows, windowName) {
@@ -624,9 +656,9 @@
         live_days: toLiveDays(data),
         trades_executed_total: toTradesExecuted(data),
         registered_at: String(data.registered_at || "").trim(),
-        activity_events: Number(data.activity_stats && data.activity_stats.activity_events) || 0,
-        total_profit_generated_usd: Number(data.total_profit_generated_usd),
-        capital_allocated_usd: Number(data.capital_allocated_usd),
+        activity_events: toFiniteNumber(data.activity_stats && data.activity_stats.activity_events) || 0,
+        total_profit_generated_usd: toFiniteNumber(data.total_profit_generated_usd),
+        capital_allocated_usd: toFiniteNumber(data.capital_allocated_usd),
         balance_usd: toBalanceUsd(data),
         realized_gain_usd: toRealizedGainUsd(data),
         execution_frequency: String(data.execution_frequency || "").trim(),
