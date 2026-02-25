@@ -27,6 +27,8 @@
 + /app/public_runtime/**
 + /app/public_seed/
 + /app/public_seed/**
++ /app/main_parts/
++ /app/main_parts/routes_site_seo_docs_pages.py
 
 # static assets for public pages
 + /app/static/
