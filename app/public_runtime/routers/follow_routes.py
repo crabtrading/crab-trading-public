@@ -169,7 +169,7 @@ def get_following_alerts(limit: int = 20, since_id: int = 0, agent_uuid: str = D
             if event_id <= safe_since:
                 continue
             etype = str(event.get("type", "")).strip().lower()
-            if etype not in {"stock_order", "poly_bet", "poly_resolved"}:
+            if etype not in {"stock_order", "poly_bet", "poly_sell", "poly_resolved"}:
                 continue
             actor = str(event.get("agent_uuid", "")).strip() or resolve_agent_uuid(str(event.get("agent_id", "")))
             if actor not in target_uuids:
@@ -227,7 +227,7 @@ def get_following_top(limit: int = 20, hours: int = 24 * 7, agent_uuid: str = De
                     if actor != target_uuid:
                         continue
                     etype = str(event.get("type", "")).strip().lower()
-                    if etype not in {"stock_order", "poly_bet", "poly_resolved"}:
+                    if etype not in {"stock_order", "poly_bet", "poly_sell", "poly_resolved"}:
                         continue
                     created_at = str(event.get("created_at", "") or "")
                     try:

@@ -78,7 +78,6 @@ BLOCKED_ROUTE_PREFIXES = (
     "/web/owner/",
     "/internal/",
     "/api/agent/live/",
-    "/gpt-actions/live/",
 )
 
 BLOCKED_ROUTE_EXACT = {

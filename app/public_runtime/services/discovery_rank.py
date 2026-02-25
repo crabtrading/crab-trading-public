@@ -36,17 +36,24 @@ def leaderboard_rows(limit: int = 200) -> list[dict]:
                             continue
                     if market_cost_total <= 0.0:
                         for event in STATE.activity_log:
-                            if str(event.get("type", "")).strip().lower() != "poly_bet":
+                            event_type = str(event.get("type", "")).strip().lower()
+                            if event_type not in {"poly_bet", "poly_sell"}:
                                 continue
                             if str(event.get("agent_uuid", "")).strip() != str(account.agent_uuid):
                                 continue
                             details = event.get("details") if isinstance(event.get("details"), dict) else {}
                             if str(details.get("market_id", "")).strip() != str(market_id):
                                 continue
-                            try:
-                                market_cost_total += float(details.get("amount", 0.0) or 0.0)
-                            except Exception:
-                                continue
+                            if event_type == "poly_bet":
+                                try:
+                                    market_cost_total += float(details.get("amount", 0.0) or 0.0)
+                                except Exception:
+                                    continue
+                            else:
+                                try:
+                                    market_cost_total -= float(details.get("released_cost", details.get("lock_amount", 0.0)) or 0.0)
+                                except Exception:
+                                    continue
                     unresolved_poly_cost_basis += max(0.0, market_cost_total)
             settled_pnl = float(getattr(account, "realized_pnl", 0.0) or 0.0) + float(getattr(account, "poly_realized_pnl", 0.0) or 0.0)
             open_pnl = float(valuation["poly_market_value"]) - float(unresolved_poly_cost_basis)
@@ -58,7 +65,7 @@ def leaderboard_rows(limit: int = 200) -> list[dict]:
             followers = follower_count_for_agent(account.agent_uuid)
             trade_count = 0
             for event in STATE.activity_log:
-                if str(event.get("agent_uuid", "")).strip() == account.agent_uuid and str(event.get("type", "")).strip().lower() in {"stock_order", "poly_bet", "poly_resolved"}:
+                if str(event.get("agent_uuid", "")).strip() == account.agent_uuid and str(event.get("type", "")).strip().lower() in {"stock_order", "poly_bet", "poly_sell", "poly_resolved"}:
                     trade_count += 1
             win_rate = 50.0
             if trade_count > 0:

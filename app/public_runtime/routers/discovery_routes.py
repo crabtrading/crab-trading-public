@@ -48,6 +48,47 @@ def _algorithm_preview(full_code: str, *, max_lines: int = 26, max_chars: int = 
     }
 
 
+def _comment_prefix(language: str) -> str:
+    key = str(language or "").strip().lower()
+    if key in {"javascript", "js", "typescript", "ts", "java", "c", "cpp", "c++", "csharp", "cs", "go", "rust", "kotlin", "swift", "php"}:
+        return "//"
+    if key in {"sql", "haskell", "lua"}:
+        return "--"
+    return "#"
+
+
+def _public_trading_code_payload(account, language: str) -> tuple[str, bool]:
+    raw_code = str(getattr(account, "trading_code", "") or "").strip()
+    if raw_code:
+        return raw_code, True
+
+    summary_candidates = (
+        str(getattr(account, "strategy_summary", "") or "").strip(),
+        str(getattr(account, "strategy_summary_day", "") or "").strip(),
+        str(getattr(account, "description", "") or "").strip(),
+    )
+    summary = ""
+    for item in summary_candidates:
+        text = " ".join(item.split()).strip()
+        if len(text) >= 8 and not text.isdigit():
+            summary = text
+            break
+
+    prefix = _comment_prefix(language)
+    if summary:
+        fallback = (
+            f"{prefix} Public strategy summary\n"
+            f"{prefix} {summary}\n\n"
+            f"{prefix} No executable trading code provided."
+        )
+    else:
+        fallback = (
+            f"{prefix} Public strategy summary unavailable.\n"
+            f"{prefix} No executable trading code provided."
+        )
+    return fallback, False
+
+
 @router.get("/discovery/agents")
 def get_discovery_agents(
     window: str = "7d",
@@ -103,7 +144,7 @@ def get_discovery_activity(limit: int = 40) -> dict:
     with STATE.lock:
         for event in reversed(STATE.activity_log):
             etype = str(event.get("type", "")).strip().lower()
-            if etype not in {"stock_order", "poly_bet", "poly_resolved"}:
+            if etype not in {"stock_order", "poly_bet", "poly_sell", "poly_resolved"}:
                 continue
             details = event.get("details") if isinstance(event.get("details"), dict) else {}
             agent_uuid = str(event.get("agent_uuid", "")).strip() or resolve_agent_uuid(str(event.get("agent_id", "")))
@@ -146,6 +187,28 @@ def get_discovery_activity(limit: int = 40) -> dict:
                         "outcome": str(details.get("outcome", "")).upper(),
                         "amount": amount,
                         "shares": shares,
+                    }
+                )
+            elif etype == "poly_sell":
+                market_id = str(details.get("market_id", "")).strip()
+                market = STATE.poly_markets.get(market_id) if market_id else {}
+                market_label = str(details.get("market_label", "")).strip() or str(market.get("question", "") if isinstance(market, dict) else "").strip() or market_id
+                amount = float(details.get("amount", details.get("proceeds", 0.0)) or 0.0)
+                shares = float(details.get("shares", 0.0) or 0.0)
+                realized = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
+                item.update(
+                    {
+                        "symbol": "POLY",
+                        "side": "POLY",
+                        "effective_action": "POLY_SELL",
+                        "qty": shares,
+                        "notional": amount,
+                        "market_id": market_id,
+                        "market_label": market_label,
+                        "outcome": str(details.get("outcome", "")).upper(),
+                        "amount": amount,
+                        "shares": shares,
+                        "realized_gross": realized,
                     }
                 )
             else:
@@ -192,12 +255,8 @@ def get_public_trading_code(agent_id: str, include_code: bool = Query(default=Tr
         account = STATE.accounts.get(target_uuid)
         if not account:
             raise HTTPException(status_code=404, detail="agent_not_found")
-        shared = bool(getattr(account, "trading_code_shared", False))
-        code = str(getattr(account, "trading_code", "") or "")
-        if not shared or not code.strip():
-            raise HTTPException(status_code=404, detail="trading_code_not_shared")
-
         language = _normalize_language(str(getattr(account, "trading_code_language", "python") or "python"))
+        code, has_user_code = _public_trading_code_payload(account, language)
         preview = _algorithm_preview(code)
 
     return {
@@ -219,5 +278,6 @@ def get_public_trading_code(agent_id: str, include_code: bool = Query(default=Tr
             "preview_truncated": bool(preview.get("truncated", False)),
             "preview_total_lines": int(preview.get("total_lines", 0) or 0),
             "preview_shown_lines": int(preview.get("shown_lines", 0) or 0),
+            "has_user_code": bool(has_user_code),
         },
     }

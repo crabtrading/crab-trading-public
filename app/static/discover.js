@@ -9,6 +9,21 @@
   const COLD_START_THRESHOLD = 12;
   const RECENT_TRANSACTION_DEFAULT_VISIBLE = 20;
   const RECENT_TRANSACTION_FETCH_LIMIT = 120;
+  const DISCOVERY_ROWS_ENDPOINTS = [
+    "/api/v1/public/discovery/agents",
+    "/web/public/follow/discovery",
+  ];
+  const RECENT_TRANSACTIONS_ENDPOINTS = [
+    "/api/v1/public/discovery/activity",
+    "/web/sim/recent-orders",
+  ];
+  const TRADING_CODE_ENDPOINT_BUILDERS = [
+    (target, queryString) => `/api/v1/public/discovery/agents/${encodeURIComponent(target)}/trading-code?${queryString}`,
+    (target, queryString) => `/web/public/agents/${encodeURIComponent(target)}/trading-code?${queryString}`,
+  ];
+  const AGENT_SUMMARY_ENDPOINT_BUILDERS = [
+    (target) => `/web/sim/agents/${encodeURIComponent(target)}/recent-trades?limit=1`,
+  ];
 
   const state = {
     activeWindow: "30d",
@@ -555,8 +570,16 @@
       const idText = String(data.id || "").trim();
       const agentUuid = String(data.agent_uuid || "").trim();
       const agentId = sanitizeText(String(data.agent_id || "").trim()) || "Unknown Agent";
-      const symbol = type === "poly_bet" ? "POLY" : (normalizeSymbolQuery(data.symbol) || "MARKET");
-      const side = type === "poly_bet" ? "POLY" : normalizeTransactionSide(data.side, data.effective_action);
+      const symbol = (type === "poly_bet" || type === "poly_sell" || type === "poly_resolved")
+        ? "POLY"
+        : (normalizeSymbolQuery(data.symbol) || "MARKET");
+      const side = type === "poly_bet"
+        ? "BET"
+        : type === "poly_sell"
+        ? "SELL"
+        : type === "poly_resolved"
+        ? "RESOLVE"
+        : normalizeTransactionSide(data.side, data.effective_action);
       const marketId = String(data.market_id || "").trim();
       const outcome = String(data.outcome || "").trim().toUpperCase();
       const key = idText
@@ -577,6 +600,10 @@
         outcome,
         amount: Number(data.amount),
         shares: Number(data.shares),
+        winning_outcome: String(data.winning_outcome || "").trim().toUpperCase(),
+        payout: Number(data.payout),
+        cost_basis: Number(data.cost_basis),
+        realized_gross: Number(data.realized_gross),
         qty: Number(data.qty),
         fill_price: Number(data.fill_price),
         notional: Number(data.notional),
@@ -853,12 +880,14 @@
     const side = String(row.side || "").trim().toUpperCase();
     const isBuy = side === "BUY";
     const isSell = side === "SELL";
-    const isPoly = side === "POLY" || type === "poly_bet";
-    const sideLabel = isBuy ? "BUY" : isSell ? "SELL" : isPoly ? "POLY" : "TRADE";
+    const isPolyBet = type === "poly_bet";
+    const isPolySell = type === "poly_sell";
+    const isPolyResolved = type === "poly_resolved";
+    const sideLabel = isBuy ? "BUY" : isSell ? "SELL" : isPolyBet ? "BET" : isPolySell ? "SELL" : isPolyResolved ? "RESOLVE" : "TRADE";
     const sideClass = isBuy ? "buy" : isSell ? "sell" : "trade";
     let symbol = normalizeSymbolQuery(row.symbol) || "MARKET";
     const details = [];
-    if (type === "poly_bet") {
+    if (isPolyBet) {
       symbol = "POLY";
       const marketLabel = sanitizeText(row.market_label || row.market_id || "Polymarket");
       const outcome = String(row.outcome || "").trim().toUpperCase();
@@ -868,6 +897,34 @@
       if (outcome) details.push(outcome);
       if (amountText) details.push(amountText);
       if (sharesText) details.push(`Shares ${sharesText}`);
+    } else if (isPolySell) {
+      symbol = "POLY";
+      const marketLabel = sanitizeText(row.market_label || row.market_id || "Polymarket");
+      const outcome = String(row.outcome || "").trim().toUpperCase();
+      const amountText = formatMoney(row.amount || row.notional);
+      const sharesText = formatQuantity(row.shares || row.qty);
+      const pnlValue = Number(row.realized_gross);
+      const pnlText = Number.isFinite(pnlValue)
+        ? `PnL ${pnlValue >= 0 ? "+" : "-"}$${Math.abs(pnlValue).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+        : "";
+      if (marketLabel) details.push(marketLabel);
+      if (outcome) details.push(outcome);
+      if (amountText) details.push(`Proceeds ${amountText}`);
+      if (sharesText) details.push(`Shares ${sharesText}`);
+      if (pnlText) details.push(pnlText);
+    } else if (isPolyResolved) {
+      symbol = "POLY";
+      const marketLabel = sanitizeText(row.market_label || row.market_id || "Polymarket");
+      const winning = String(row.winning_outcome || row.outcome || "").trim().toUpperCase();
+      const payoutText = formatMoney(row.payout || row.notional);
+      const pnlValue = Number(row.realized_gross);
+      const pnlText = Number.isFinite(pnlValue)
+        ? `PnL ${pnlValue >= 0 ? "+" : "-"}$${Math.abs(pnlValue).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+        : "";
+      if (marketLabel) details.push(marketLabel);
+      if (winning) details.push(`WIN ${winning}`);
+      if (payoutText) details.push(`Payout ${payoutText}`);
+      if (pnlText) details.push(pnlText);
     } else {
       const qtyText = formatQuantity(row.qty);
       const fillPrice = Number(row.fill_price);
@@ -943,6 +1000,33 @@
     accountLinkEl.textContent = String(text || "").trim() || "Owner";
   }
 
+  async function fetchJsonWithFallback(urls, errorPrefix) {
+    let fallbackErr = null;
+    for (const url of urls) {
+      const targetUrl = String(url || "").trim();
+      if (!targetUrl) continue;
+      let response;
+      try {
+        response = await fetch(targetUrl, { headers: { Accept: "application/json" } });
+      } catch (err) {
+        fallbackErr = err;
+        continue;
+      }
+      if (response.ok) {
+        return response.json();
+      }
+      if (response.status === 404) {
+        fallbackErr = new Error(`${errorPrefix}_${response.status}`);
+        continue;
+      }
+      throw new Error(`${errorPrefix}_${response.status}`);
+    }
+    if (fallbackErr instanceof Error) {
+      throw fallbackErr;
+    }
+    throw new Error(`${errorPrefix}_no_endpoint`);
+  }
+
   function syncTopbar() {
     if (!(accountLinkEl instanceof HTMLAnchorElement) || !(newAgentLinkEl instanceof HTMLAnchorElement)) return;
 
@@ -978,17 +1062,14 @@
     query.set("limit", "200");
     query.set("page", "1");
     query.set("tz_offset_minutes", String(-new Date().getTimezoneOffset()));
-    if (ticker) query.set("q", ticker);
-
-    const response = await fetch(`/api/v1/public/discovery/agents?${query.toString()}`, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error(`public_discover_failed_${response.status}`);
+    if (ticker) {
+      query.set("q", ticker);
+      query.set("symbol", ticker);
     }
 
-    const payload = await response.json();
+    const queryString = query.toString();
+    const urls = DISCOVERY_ROWS_ENDPOINTS.map((basePath) => `${basePath}?${queryString}`);
+    const payload = await fetchJsonWithFallback(urls, "public_discover_failed");
     const rows = mapDiscoveryRows(payload && payload.items, windowName);
     return {
       source: "public",
@@ -1003,16 +1084,9 @@
     query.set("limit", "200");
     query.set("page", "1");
     if (ticker) query.set("symbol", ticker);
-
-    const response = await fetch(`/api/v1/public/discovery/agents?${query.toString()}`, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error(`public_discover_failed_${response.status}`);
-    }
-
-    const payload = await response.json();
+    const queryString = query.toString();
+    const urls = DISCOVERY_ROWS_ENDPOINTS.map((basePath) => `${basePath}?${queryString}`);
+    const payload = await fetchJsonWithFallback(urls, "public_discover_failed");
     const baseRows = Array.isArray(payload && payload.items)
       ? payload.items
       : Array.isArray(payload && payload.leaders)
@@ -1040,16 +1114,15 @@
     const safeLimit = Math.max(1, Math.min(Number(limit) || RECENT_TRANSACTION_FETCH_LIMIT, 200));
     const query = new URLSearchParams();
     query.set("limit", String(safeLimit));
-    const response = await fetch(`/api/v1/public/discovery/activity?${query.toString()}`, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error(`recent_orders_failed_${response.status}`);
-    }
-
-    const payload = await response.json();
-    return mapRecentTransactionRows(payload && payload.items);
+    const queryString = query.toString();
+    const urls = RECENT_TRANSACTIONS_ENDPOINTS.map((basePath) => `${basePath}?${queryString}`);
+    const payload = await fetchJsonWithFallback(urls, "recent_orders_failed");
+    const rows = Array.isArray(payload && payload.items)
+      ? payload.items
+      : Array.isArray(payload && payload.orders)
+      ? payload.orders
+      : [];
+    return mapRecentTransactionRows(rows);
   }
 
   async function loadRecentTransactions() {
@@ -1460,16 +1533,66 @@
     }
     const query = new URLSearchParams();
     query.set("include_code", includeCode ? "1" : "0");
-    const response = await fetch(`/api/v1/public/discovery/agents/${encodeURIComponent(target)}/trading-code?${query.toString()}`, {
-      headers: { Accept: "application/json" },
-    });
-    if (response.status === 404) {
-      throw new Error("trading_code_not_shared");
+    const queryString = query.toString();
+    for (const buildPath of TRADING_CODE_ENDPOINT_BUILDERS) {
+      const path = String(buildPath(target, queryString) || "").trim();
+      if (!path) continue;
+      let response;
+      try {
+        response = await fetch(path, { headers: { Accept: "application/json" } });
+      } catch (_err) {
+        continue;
+      }
+      if (response.status === 404) {
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`trading_code_fetch_failed_${response.status}`);
+      }
+      return response.json();
     }
-    if (!response.ok) {
-      throw new Error(`trading_code_fetch_failed_${response.status}`);
+    throw new Error("trading_code_not_shared");
+  }
+
+  async function fetchPublicSummaryByTarget(targetAgent) {
+    const target = String(targetAgent || "").trim();
+    if (!target) return "";
+
+    for (const buildPath of AGENT_SUMMARY_ENDPOINT_BUILDERS) {
+      const path = String(buildPath(target) || "").trim();
+      if (!path) continue;
+
+      let response;
+      try {
+        response = await fetch(path, { headers: { Accept: "application/json" } });
+      } catch (_err) {
+        continue;
+      }
+      if (!response.ok) {
+        continue;
+      }
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (_err) {
+        continue;
+      }
+
+      const profile = payload && typeof payload.profile === "object" ? payload.profile : {};
+      const summaryCandidates = [
+        profile.strategy_summary,
+        profile.auto_summary,
+        profile.description,
+      ];
+      for (const line of summaryCandidates) {
+        const clean = normalizeNarrativeLine(line, 160);
+        if (!clean || isLowValueNarrative(clean) || looksLikeCodeLine(clean)) continue;
+        return clean;
+      }
     }
-    return response.json();
+
+    return "";
   }
 
   function buildStrategyOverview(row, viewModel) {
@@ -1581,6 +1704,42 @@
     };
   }
 
+  function buildPublicSummaryViewModel(row, externalSummary = "") {
+    const sourceText = String(row && row.strategy_text ? row.strategy_text : "").trim();
+    const summaryLine = normalizeNarrativeLine(externalSummary || summaryFromRow(row), 120);
+    const basePlainLines = splitToBullets(sourceText || summaryLine, 6);
+
+    const usedNarrativeKeys = new Set();
+    const plainLines = [];
+    const summaryKey = narrativeDedupKey(summaryLine);
+    if (summaryLine && summaryKey) {
+      plainLines.push(summaryLine);
+      usedNarrativeKeys.add(summaryKey);
+    }
+    for (const line of dedupeNarrativeLines(basePlainLines, { maxItems: 3 })) {
+      const key = narrativeDedupKey(line);
+      if (!key || usedNarrativeKeys.has(key)) continue;
+      plainLines.push(line);
+      usedNarrativeKeys.add(key);
+      if (plainLines.length >= 3) break;
+    }
+    const publicLines = plainLines.length ? plainLines : ["Public strategy summary unavailable."];
+    const rules = dedupeNarrativeLines(
+      deriveRules({ briefLines: basePlainLines }),
+      {
+        maxItems: 3,
+        blockedKeys: usedNarrativeKeys,
+      }
+    );
+
+    return {
+      summary: summaryLine || publicLines[0] || "",
+      plainLines: publicLines,
+      rules,
+      executionFrequency: normalizeNarrativeLine(String(row && row.execution_frequency ? row.execution_frequency : "").trim(), 96) || "-",
+    };
+  }
+
   function setAlgorithmLoadingState(row) {
     state.activeAlgorithmAgent = String(row.agent_uuid || row.agent_id || row.key || "").trim();
     state.activeAlgorithmCode = "";
@@ -1637,23 +1796,26 @@
       renderAlgorithmDrawer();
     } catch (err) {
       const reason = String(err && err.message ? err.message : "");
+      const notShared = reason === "trading_code_not_shared";
+      let externalSummary = "";
+      if (notShared) {
+        externalSummary = await fetchPublicSummaryByTarget(targetAgent);
+      }
+      const fallback = buildPublicSummaryViewModel(row, externalSummary);
       state.activeAlgorithmOverview = {
         title: `Trading Algorithm · ${displayNameForRow(row)}`,
-        meta: reason === "trading_code_not_shared" ? "Not shared publicly." : "Unable to load details.",
+        meta: notShared ? "Code not shared publicly. Showing public summary." : "Unable to load details.",
         asset: normalizeSymbols(row.symbols || []).slice(0, 2).join(" • ") || "Multi-Asset",
-        logic: "-",
-        execution: normalizeNarrativeLine(String(row.execution_frequency || "").trim(), 96) || "-",
+        logic: notShared ? (fallback.summary || "-") : "-",
+        execution: fallback.executionFrequency,
       };
       state.activeAlgorithmSections = {
-        plain: reason === "trading_code_not_shared"
-          ? ["No public strategy details."]
-          : ["Unable to load strategy."],
-        rules: [],
-        code: reason === "trading_code_not_shared"
-          ? "# Not shared publicly."
-          : "# Unable to load preview.",
-        note: "",
+        plain: notShared ? fallback.plainLines : ["Unable to load strategy."],
+        rules: notShared ? fallback.rules : [],
+        code: notShared ? "# Code is private for this agent." : "# Unable to load preview.",
+        note: notShared ? "Public summary only." : "",
       };
+      state.activeAlgorithmAgent = notShared ? "" : String(row.agent_uuid || row.agent_id || key).trim();
       state.activeAlgorithmCode = "";
       renderAlgorithmDrawer();
     } finally {

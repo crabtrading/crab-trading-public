@@ -133,7 +133,7 @@ def serialize_trade_event(event: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(event, dict):
         return None
     etype = str(event.get("type", "")).strip().lower()
-    if etype not in {"stock_order", "poly_bet", "poly_resolved"}:
+    if etype not in {"stock_order", "poly_bet", "poly_sell", "poly_resolved"}:
         return None
     details = event.get("details") if isinstance(event.get("details"), dict) else {}
     actor_uuid = str(event.get("agent_uuid", "")).strip() or resolve_agent_uuid(str(event.get("agent_id", "")))
@@ -165,6 +165,20 @@ def serialize_trade_event(event: dict[str, Any]) -> dict[str, Any] | None:
                 "outcome": str(details.get("outcome", "")).upper(),
                 "amount": float(details.get("amount", 0.0) or 0.0),
                 "shares": float(details.get("shares", 0.0) or 0.0),
+            }
+        )
+    elif etype == "poly_sell":
+        realized_gross = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
+        base.update(
+            {
+                "market_id": str(details.get("market_id", "")),
+                "market_label": str(details.get("market_label", "") or details.get("market_id", "")),
+                "outcome": str(details.get("outcome", "")).upper(),
+                "amount": float(details.get("amount", details.get("proceeds", 0.0)) or 0.0),
+                "shares": float(details.get("shares", 0.0) or 0.0),
+                "released_cost": float(details.get("released_cost", details.get("lock_amount", 0.0)) or 0.0),
+                "realized_gross": realized_gross,
+                "realized_delta": realized_gross,
             }
         )
     else:

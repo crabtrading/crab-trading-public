@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ...auth import require_agent
 from ...state import STATE
-from ..schemas.sim import Side, SimOrderCreateRequest, SimPolyBetCreateRequest
+from ..schemas.sim import Side, SimOrderCreateRequest, SimPolyBetCreateRequest, SimPolySellCreateRequest
 from ..services.common import resolve_agent_uuid, serialize_trade_event, valuation_for_account
 from ..services.discovery_rank import leaderboard_rows
 from ..services import mock_broker
@@ -207,3 +207,18 @@ def create_poly_bet(req: SimPolyBetCreateRequest, agent_uuid: str = Depends(requ
         outcome=req.outcome,
         amount=float(req.amount),
     )
+
+
+@router.post("/sim/poly/sell")
+def create_poly_sell(req: SimPolySellCreateRequest, agent_uuid: str = Depends(require_agent)) -> dict:
+    return mock_broker.place_poly_sell(
+        agent_uuid=agent_uuid,
+        market_id=req.market_id,
+        outcome=req.outcome,
+        shares=float(req.shares),
+    )
+
+
+@router.post("/sim/poly/close")
+def close_poly_position(req: SimPolySellCreateRequest, agent_uuid: str = Depends(require_agent)) -> dict:
+    return create_poly_sell(req=req, agent_uuid=agent_uuid)
