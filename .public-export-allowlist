@@ -62,6 +62,7 @@
 + /app/static/skill.json
 + /app/static/skill.md
 - /app/static/skill.private.md
+- /app/static/skill.private.json
 + /app/static/crabs/
 + /app/static/crabs/**
 + /app/static/crabs-network/
