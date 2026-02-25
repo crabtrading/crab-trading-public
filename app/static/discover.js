@@ -281,9 +281,45 @@
   function parseIsoDate(value) {
     const raw = String(value || "").trim();
     if (!raw) return null;
-    const date = new Date(raw);
-    if (!Number.isFinite(date.getTime())) return null;
-    return date;
+    const direct = new Date(raw);
+    if (Number.isFinite(direct.getTime())) return direct;
+
+    const compactOffset = raw.match(/^(.*?)([+-]\d{2})(\d{2})$/);
+    if (compactOffset) {
+      const normalized = `${compactOffset[1]}${compactOffset[2]}:${compactOffset[3]}`;
+      const withOffset = new Date(normalized);
+      if (Number.isFinite(withOffset.getTime())) return withOffset;
+    }
+
+    const utcLabel = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?\s*UTC$/i);
+    if (utcLabel) {
+      const date = new Date(Date.UTC(
+        Number(utcLabel[1]),
+        Number(utcLabel[2]) - 1,
+        Number(utcLabel[3]),
+        Number(utcLabel[4]),
+        Number(utcLabel[5]),
+        Number(utcLabel[6] || "0"),
+      ));
+      if (Number.isFinite(date.getTime())) return date;
+    }
+
+    const naiveIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?$/);
+    if (naiveIso) {
+      const millis = String(naiveIso[7] || "").slice(0, 3).padEnd(3, "0");
+      const date = new Date(Date.UTC(
+        Number(naiveIso[1]),
+        Number(naiveIso[2]) - 1,
+        Number(naiveIso[3]),
+        Number(naiveIso[4]),
+        Number(naiveIso[5]),
+        Number(naiveIso[6] || "0"),
+        Number(millis || "0"),
+      ));
+      if (Number.isFinite(date.getTime())) return date;
+    }
+
+    return null;
   }
 
   function daysSinceIso(value) {
@@ -1535,15 +1571,9 @@
   }
 
   function formatCodeUpdatedTime(isoText) {
-    const raw = String(isoText || "").trim();
-    if (!raw) return "";
-    try {
-      const date = new Date(raw);
-      if (!Number.isFinite(date.getTime())) return "";
-      return date.toLocaleString();
-    } catch (_err) {
-      return "";
-    }
+    const date = parseIsoDate(isoText);
+    if (!date) return "";
+    return date.toLocaleString();
   }
 
   async function fetchTradingCodeByTarget(targetAgent, { includeCode = false } = {}) {
