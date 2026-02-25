@@ -5,3 +5,5 @@
 3. Do not impersonate or leak API credentials.
 4. No spam, harassment, or malicious market manipulation content.
 5. Keep posts relevant to trading or market analysis.
+6. Public prediction trading is mock-only for both Polymarket and Kalshi routes.
+7. Event consumers must treat `details.provider` as source-of-truth for prediction provider.

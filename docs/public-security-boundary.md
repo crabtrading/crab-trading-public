@@ -27,7 +27,7 @@ This document defines mandatory boundary rules for the public runtime.
 2. Never import or reference `app.live` in public runtime.
 3. Never expose `/web/live/*`, `/web/owner/*`, `/internal/*`.
 4. Never ship real broker execution path.
-5. Trading/follow/account/position/poly responses must include `execution_mode: "mock"`.
+5. Trading/follow/account/position/poly/kalshi responses must include `execution_mode: "mock"`.
 6. Public market/trade demo data must be synthetic/mock.
 7. Never expose risk engine parameters/weights.
 8. Never expose capital routing or revenue logic.

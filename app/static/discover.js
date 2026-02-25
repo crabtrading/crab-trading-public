@@ -265,6 +265,19 @@
     return "TRADE";
   }
 
+  function normalizePredictionProvider(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    return raw === "kalshi" ? "kalshi" : "poly";
+  }
+
+  function predictionProviderTag(value) {
+    return normalizePredictionProvider(value) === "kalshi" ? "KAL" : "POLY";
+  }
+
+  function predictionVenueLabel(value) {
+    return normalizePredictionProvider(value) === "kalshi" ? "Kalshi" : "Polymarket";
+  }
+
   function parseIsoDate(value) {
     const raw = String(value || "").trim();
     if (!raw) return null;
@@ -570,8 +583,9 @@
       const idText = String(data.id || "").trim();
       const agentUuid = String(data.agent_uuid || "").trim();
       const agentId = sanitizeText(String(data.agent_id || "").trim()) || "Unknown Agent";
+      const provider = normalizePredictionProvider(data.provider);
       const symbol = (type === "poly_bet" || type === "poly_sell" || type === "poly_resolved")
-        ? "POLY"
+        ? predictionProviderTag(provider)
         : (normalizeSymbolQuery(data.symbol) || "MARKET");
       const side = type === "poly_bet"
         ? "BET"
@@ -593,6 +607,9 @@
         agent_uuid: agentUuid,
         agent_id: agentId,
         avatar: String(data.avatar || "").trim(),
+        provider,
+        provider_event_type: String(data.provider_event_type || "").trim().toLowerCase(),
+        ticker: String(data.ticker || "").trim().toUpperCase(),
         symbol,
         side,
         market_id: marketId,
@@ -877,6 +894,9 @@
   function recentTransactionMarkup(row) {
     const type = String(row.type || "stock_order").trim().toLowerCase();
     const displayName = sanitizeText(row.agent_id || "") || "Unknown Agent";
+    const provider = normalizePredictionProvider(row.provider);
+    const providerTag = predictionProviderTag(provider);
+    const venueLabel = predictionVenueLabel(provider);
     const side = String(row.side || "").trim().toUpperCase();
     const isBuy = side === "BUY";
     const isSell = side === "SELL";
@@ -888,8 +908,8 @@
     let symbol = normalizeSymbolQuery(row.symbol) || "MARKET";
     const details = [];
     if (isPolyBet) {
-      symbol = "POLY";
-      const marketLabel = sanitizeText(row.market_label || row.market_id || "Polymarket");
+      symbol = providerTag;
+      const marketLabel = sanitizeText(row.market_label || row.market_id || venueLabel);
       const outcome = String(row.outcome || "").trim().toUpperCase();
       const amountText = formatMoney(row.amount);
       const sharesText = formatQuantity(row.shares);
@@ -898,8 +918,8 @@
       if (amountText) details.push(amountText);
       if (sharesText) details.push(`Shares ${sharesText}`);
     } else if (isPolySell) {
-      symbol = "POLY";
-      const marketLabel = sanitizeText(row.market_label || row.market_id || "Polymarket");
+      symbol = providerTag;
+      const marketLabel = sanitizeText(row.market_label || row.market_id || venueLabel);
       const outcome = String(row.outcome || "").trim().toUpperCase();
       const amountText = formatMoney(row.amount || row.notional);
       const sharesText = formatQuantity(row.shares || row.qty);
@@ -913,8 +933,8 @@
       if (sharesText) details.push(`Shares ${sharesText}`);
       if (pnlText) details.push(pnlText);
     } else if (isPolyResolved) {
-      symbol = "POLY";
-      const marketLabel = sanitizeText(row.market_label || row.market_id || "Polymarket");
+      symbol = providerTag;
+      const marketLabel = sanitizeText(row.market_label || row.market_id || venueLabel);
       const winning = String(row.winning_outcome || row.outcome || "").trim().toUpperCase();
       const payoutText = formatMoney(row.payout || row.notional);
       const pnlValue = Number(row.realized_gross);

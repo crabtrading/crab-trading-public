@@ -59,6 +59,11 @@ class AgentAccount:
     poly_fee_by_market: Dict[str, float] = field(default_factory=dict)
     poly_fee_paid: float = 0.0
     poly_realized_pnl: float = 0.0
+    kalshi_positions: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    kalshi_cost_basis: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    kalshi_fee_by_market: Dict[str, float] = field(default_factory=dict)
+    kalshi_fee_paid: float = 0.0
+    kalshi_realized_pnl: float = 0.0
     blocked: bool = False
 
     @property
@@ -179,6 +184,38 @@ class TradingState:
                 "settlement_status": "",
             },
         }
+        self.kalshi_markets: Dict[str, dict] = {
+            "kalshi:kxrecession-26dec31": {
+                "market_id": "kalshi:kxrecession-26dec31",
+                "ticker": "KXRECESSION-26DEC31",
+                "question": "US recession starts in 2026?",
+                "outcomes": {"YES": 0.47, "NO": 0.53},
+                "status": "open",
+                "closed": False,
+                "resolved": False,
+                "winning_outcome": "",
+                "settlement_status": "",
+                "resolution_source": "kalshi_demo",
+                "last_checked_at": "",
+                "resolved_at": "",
+                "source": "kalshi_demo",
+            },
+            "kalshi:kxbtc150k-26dec31": {
+                "market_id": "kalshi:kxbtc150k-26dec31",
+                "ticker": "KXBTC150K-26DEC31",
+                "question": "BTC touches 150k before 2027?",
+                "outcomes": {"YES": 0.31, "NO": 0.69},
+                "status": "open",
+                "closed": False,
+                "resolved": False,
+                "winning_outcome": "",
+                "settlement_status": "",
+                "resolution_source": "kalshi_demo",
+                "last_checked_at": "",
+                "resolved_at": "",
+                "source": "kalshi_demo",
+            },
+        }
         self.activity_log: list[dict] = []
         self.next_activity_id: int = 1
         self.test_agents: set[str] = set()
@@ -268,6 +305,9 @@ class TradingState:
         raw_poly_positions = payload.get("poly_positions", {})
         raw_poly_cost_basis = payload.get("poly_cost_basis", {})
         raw_poly_fee_by_market = payload.get("poly_fee_by_market", {})
+        raw_kalshi_positions = payload.get("kalshi_positions", {})
+        raw_kalshi_cost_basis = payload.get("kalshi_cost_basis", {})
+        raw_kalshi_fee_by_market = payload.get("kalshi_fee_by_market", {})
 
         poly_positions: Dict[str, Dict[str, float]] = {}
         if isinstance(raw_poly_positions, dict):
@@ -308,6 +348,45 @@ class TradingState:
                 except Exception:
                     continue
 
+        kalshi_positions: Dict[str, Dict[str, float]] = {}
+        if isinstance(raw_kalshi_positions, dict):
+            for market_id, outcomes in raw_kalshi_positions.items():
+                if not isinstance(outcomes, dict):
+                    continue
+                normalized_outcomes: Dict[str, float] = {}
+                for outcome, shares in outcomes.items():
+                    try:
+                        normalized_outcomes[str(outcome).upper()] = float(shares or 0.0)
+                    except Exception:
+                        continue
+                if normalized_outcomes:
+                    kalshi_positions[str(market_id)] = normalized_outcomes
+
+        kalshi_cost_basis: Dict[str, Dict[str, float]] = {}
+        if isinstance(raw_kalshi_cost_basis, dict):
+            for market_id, outcomes in raw_kalshi_cost_basis.items():
+                if not isinstance(outcomes, dict):
+                    continue
+                normalized_costs: Dict[str, float] = {}
+                for outcome, amount in outcomes.items():
+                    try:
+                        normalized_costs[str(outcome).upper()] = float(amount or 0.0)
+                    except Exception:
+                        continue
+                if normalized_costs:
+                    kalshi_cost_basis[str(market_id)] = normalized_costs
+
+        kalshi_fee_by_market: Dict[str, float] = {}
+        if isinstance(raw_kalshi_fee_by_market, dict):
+            for market_id, fee_amount in raw_kalshi_fee_by_market.items():
+                market_key = str(market_id).strip()
+                if not market_key:
+                    continue
+                try:
+                    kalshi_fee_by_market[market_key] = max(0.0, float(fee_amount or 0.0))
+                except Exception:
+                    continue
+
         return AgentAccount(
             agent_uuid=agent_uuid,
             display_name=display_name,
@@ -338,6 +417,11 @@ class TradingState:
             poly_fee_by_market=poly_fee_by_market,
             poly_fee_paid=max(0.0, float(payload.get("poly_fee_paid", 0.0) or 0.0)),
             poly_realized_pnl=float(payload.get("poly_realized_pnl", 0.0)),
+            kalshi_positions=kalshi_positions,
+            kalshi_cost_basis=kalshi_cost_basis,
+            kalshi_fee_by_market=kalshi_fee_by_market,
+            kalshi_fee_paid=max(0.0, float(payload.get("kalshi_fee_paid", 0.0) or 0.0)),
+            kalshi_realized_pnl=float(payload.get("kalshi_realized_pnl", 0.0)),
             blocked=bool(payload.get("blocked", False)),
         )
 
@@ -704,6 +788,8 @@ class TradingState:
                     self.stock_prices = dict(raw["stock_prices"])
                 if isinstance(raw.get("poly_markets"), dict):
                     self.poly_markets = dict(raw["poly_markets"])
+                if isinstance(raw.get("kalshi_markets"), dict):
+                    self.kalshi_markets = dict(raw["kalshi_markets"])
                 if isinstance(raw.get("test_agents"), list):
                     normalized_test_agents = set()
                     for identifier in raw["test_agents"]:
@@ -796,11 +882,20 @@ class TradingState:
                     if not isinstance(account.poly_fee_by_market, dict):
                         account.poly_fee_by_market = {}
                         migration_changed = True
+                    if not isinstance(account.kalshi_cost_basis, dict):
+                        account.kalshi_cost_basis = {}
+                        migration_changed = True
+                    if not isinstance(account.kalshi_fee_by_market, dict):
+                        account.kalshi_fee_by_market = {}
+                        migration_changed = True
                     if float(getattr(account, "cash_locked", 0.0) or 0.0) < 0.0:
                         account.cash_locked = 0.0
                         migration_changed = True
                     if float(getattr(account, "poly_fee_paid", 0.0) or 0.0) < 0.0:
                         account.poly_fee_paid = 0.0
+                        migration_changed = True
+                    if float(getattr(account, "kalshi_fee_paid", 0.0) or 0.0) < 0.0:
+                        account.kalshi_fee_paid = 0.0
                         migration_changed = True
                     for market_id, outcomes in account.poly_positions.items():
                         if not isinstance(outcomes, dict):
@@ -819,6 +914,22 @@ class TradingState:
                             migration_changed = True
                         if market_id not in account.poly_fee_by_market:
                             account.poly_fee_by_market[market_id] = 0.0
+                            migration_changed = True
+                    for market_id, outcomes in account.kalshi_positions.items():
+                        if not isinstance(outcomes, dict):
+                            continue
+                        market_costs = account.kalshi_cost_basis.get(market_id)
+                        if not isinstance(market_costs, dict):
+                            market_costs = {}
+                            account.kalshi_cost_basis[market_id] = market_costs
+                            migration_changed = True
+                        for outcome, _shares in outcomes.items():
+                            if outcome in market_costs:
+                                continue
+                            market_costs[outcome] = 0.0
+                            migration_changed = True
+                        if market_id not in account.kalshi_fee_by_market:
+                            account.kalshi_fee_by_market[market_id] = 0.0
                             migration_changed = True
                     if account.is_test:
                         self.test_agents.add(agent_uuid)
@@ -865,6 +976,42 @@ class TradingState:
                             market_changed = True
                         if market_changed:
                             self.poly_markets[str(market_id)] = market
+                            migration_changed = True
+                if not isinstance(self.kalshi_markets, dict):
+                    self.kalshi_markets = {}
+                    migration_changed = True
+                else:
+                    for market_id, market in list(self.kalshi_markets.items()):
+                        if not isinstance(market, dict):
+                            continue
+                        market_changed = False
+                        ticker = str(market.get("ticker") or "").strip().upper()
+                        if str(market.get("ticker", "")).strip().upper() != ticker:
+                            market["ticker"] = ticker
+                            market_changed = True
+                        if "status" not in market:
+                            market["status"] = "open"
+                            market_changed = True
+                        if "closed" not in market:
+                            market["closed"] = str(market.get("status", "")).strip().lower() not in {"open", ""}
+                            market_changed = True
+                        if "resolution_source" not in market:
+                            market["resolution_source"] = ""
+                            market_changed = True
+                        if "winning_outcome" not in market:
+                            market["winning_outcome"] = ""
+                            market_changed = True
+                        if "last_checked_at" not in market:
+                            market["last_checked_at"] = ""
+                            market_changed = True
+                        if "resolved_at" not in market:
+                            market["resolved_at"] = ""
+                            market_changed = True
+                        if "settlement_status" not in market:
+                            market["settlement_status"] = "settled" if bool(market.get("resolved")) else ""
+                            market_changed = True
+                        if market_changed:
+                            self.kalshi_markets[str(market_id)] = market
                             migration_changed = True
                 for post in self.forum_posts:
                     if bool(post.get("is_test")):
@@ -964,7 +1111,7 @@ class TradingState:
     def save_runtime_state(self) -> None:
         with self.lock:
             payload = {
-                "version": 5,
+                "version": 6,
                 "accounts": {agent_uuid: asdict(account) for agent_uuid, account in self.accounts.items()},
                 "agent_name_to_uuid": self.agent_name_to_uuid,
                 "agent_keys": self.agent_keys,
@@ -987,6 +1134,7 @@ class TradingState:
                 "next_forum_comment_id": self.next_forum_comment_id,
                 "stock_prices": self.stock_prices,
                 "poly_markets": self.poly_markets,
+                "kalshi_markets": self.kalshi_markets,
                 "activity_log": self.activity_log,
                 "next_activity_id": self.next_activity_id,
                 "test_agents": sorted(self.test_agents),

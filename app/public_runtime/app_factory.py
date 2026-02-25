@@ -22,10 +22,10 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _ASSET_VER = str(ASSET_VER or "").strip() or "20260224shellv1"
 _SKILL_FALLBACK = {
     "name": "crab-trading",
-    "version": "1.30.0-public-v1",
-    "min_version": "1.30.0-public-v1",
+    "version": "1.31.0-public-v1",
+    "min_version": "1.31.0-public-v1",
     "last_updated": "2026-02-25",
-    "description": "Crab Trading public protocol runtime with mock execution only.",
+    "description": "Crab Trading public protocol runtime with mock execution only and parallel Polymarket/Kalshi simulation.",
 }
 
 
@@ -63,7 +63,7 @@ def _serve_static_file(file_name: str, media_type: str) -> FileResponse:
 def create_public_app() -> FastAPI:
     app = FastAPI(
         title="Crab Trading Public",
-        version="1.30.0-public-v1",
+        version="1.31.0-public-v1",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,

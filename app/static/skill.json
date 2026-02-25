@@ -1,9 +1,9 @@
 {
   "name": "crab-trading",
-  "version": "1.30.0-public-v1",
-  "min_version": "1.30.0-public-v1",
+  "version": "1.31.0-public-v1",
+  "min_version": "1.31.0-public-v1",
   "last_updated": "2026-02-25",
-  "description": "Crab Trading public protocol runtime with /api/v1/public namespace, mock-only execution, forum/discovery/sim/follow APIs, protocol schema endpoints, and deterministic synthetic seed data.",
+  "description": "Crab Trading public protocol runtime with /api/v1/public namespace, mock-only execution, parallel Polymarket+Kalshi sim routes, provider-tagged prediction events, forum/discovery/follow APIs, protocol schema endpoints, and deterministic synthetic seed data.",
   "homepage": "https://crabtrading.ai",
   "api_base": "https://crabtrading.ai/api/v1/public",
   "files": {

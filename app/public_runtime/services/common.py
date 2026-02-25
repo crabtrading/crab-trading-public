@@ -82,14 +82,29 @@ def valuation_for_account(account: AgentAccount) -> dict[str, float]:
             odds = market_outcomes.get(outcome)
             if isinstance(odds, (int, float)) and float(odds) > 0:
                 poly_value += float(shares) * float(odds)
+    kalshi_value = 0.0
+    for market_id, outcomes in account.kalshi_positions.items():
+        market = STATE.kalshi_markets.get(str(market_id), {})
+        if bool(market.get("resolved")):
+            continue
+        market_outcomes = market.get("outcomes", {})
+        if not isinstance(outcomes, dict):
+            continue
+        for outcome, shares in outcomes.items():
+            odds = market_outcomes.get(outcome)
+            if isinstance(odds, (int, float)) and float(odds) > 0:
+                kalshi_value += float(shares) * float(odds)
 
-    equity = float(account.cash) + float(stock_value) + float(crypto_value) + float(poly_value)
+    prediction_market_value = float(poly_value) + float(kalshi_value)
+    equity = float(account.cash) + float(stock_value) + float(crypto_value) + prediction_market_value
     return_pct = ((equity - _SIM_STARTING_BALANCE) / _SIM_STARTING_BALANCE) * 100.0 if _SIM_STARTING_BALANCE > 0 else 0.0
     return {
         "cash": float(account.cash),
         "stock_market_value": float(stock_value),
         "crypto_market_value": float(crypto_value),
         "poly_market_value": float(poly_value),
+        "kalshi_market_value": float(kalshi_value),
+        "prediction_market_value": float(prediction_market_value),
         "equity": float(equity),
         "return_pct": float(return_pct),
     }
@@ -136,6 +151,8 @@ def serialize_trade_event(event: dict[str, Any]) -> dict[str, Any] | None:
     if etype not in {"stock_order", "poly_bet", "poly_sell", "poly_resolved"}:
         return None
     details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    details_provider = str(details.get("provider", "poly") or "poly").strip().lower() or "poly"
+    provider_event_type = str(details.get("provider_event_type", "") or "").strip().lower()
     actor_uuid = str(event.get("agent_uuid", "")).strip() or resolve_agent_uuid(str(event.get("agent_id", "")))
     base: dict[str, Any] = {
         "id": int(event.get("id", 0) or 0),
@@ -158,21 +175,31 @@ def serialize_trade_event(event: dict[str, Any]) -> dict[str, Any] | None:
             }
         )
     elif etype == "poly_bet":
+        market_id = str(details.get("market_id", ""))
+        market = STATE.kalshi_markets.get(market_id, {}) if details_provider == "kalshi" else STATE.poly_markets.get(market_id, {})
         base.update(
             {
-                "market_id": str(details.get("market_id", "")),
-                "market_label": str(details.get("market_label", "") or details.get("market_id", "")),
+                "provider": details_provider,
+                "provider_event_type": provider_event_type or "bet",
+                "ticker": str(details.get("ticker", "") or "").strip().upper(),
+                "market_id": market_id,
+                "market_label": str(details.get("market_label", "") or (market.get("question") if isinstance(market, dict) else "") or market_id),
                 "outcome": str(details.get("outcome", "")).upper(),
                 "amount": float(details.get("amount", 0.0) or 0.0),
                 "shares": float(details.get("shares", 0.0) or 0.0),
             }
         )
     elif etype == "poly_sell":
+        market_id = str(details.get("market_id", ""))
+        market = STATE.kalshi_markets.get(market_id, {}) if details_provider == "kalshi" else STATE.poly_markets.get(market_id, {})
         realized_gross = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
         base.update(
             {
-                "market_id": str(details.get("market_id", "")),
-                "market_label": str(details.get("market_label", "") or details.get("market_id", "")),
+                "provider": details_provider,
+                "provider_event_type": provider_event_type or "sell",
+                "ticker": str(details.get("ticker", "") or "").strip().upper(),
+                "market_id": market_id,
+                "market_label": str(details.get("market_label", "") or (market.get("question") if isinstance(market, dict) else "") or market_id),
                 "outcome": str(details.get("outcome", "")).upper(),
                 "amount": float(details.get("amount", details.get("proceeds", 0.0)) or 0.0),
                 "shares": float(details.get("shares", 0.0) or 0.0),
@@ -182,10 +209,16 @@ def serialize_trade_event(event: dict[str, Any]) -> dict[str, Any] | None:
             }
         )
     else:
+        market_id = str(details.get("market_id", ""))
+        market = STATE.kalshi_markets.get(market_id, {}) if details_provider == "kalshi" else STATE.poly_markets.get(market_id, {})
         realized_gross = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
         base.update(
             {
-                "market_id": str(details.get("market_id", "")),
+                "provider": details_provider,
+                "provider_event_type": provider_event_type or "resolve",
+                "ticker": str(details.get("ticker", "") or "").strip().upper(),
+                "market_id": market_id,
+                "market_label": str(details.get("market_label", "") or (market.get("question") if isinstance(market, dict) else "") or market_id),
                 "winning_outcome": str(details.get("winning_outcome", "")).upper(),
                 "payout": float(details.get("payout", 0.0) or 0.0),
                 "cost_basis": float(details.get("cost_basis", 0.0) or 0.0),

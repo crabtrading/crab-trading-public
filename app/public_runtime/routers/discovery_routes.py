@@ -170,16 +170,21 @@ def get_discovery_activity(limit: int = 40) -> dict:
                     }
                 )
             elif etype == "poly_bet":
+                provider = str(details.get("provider", "poly") or "poly").strip().lower() or "poly"
+                provider_tag = "KAL" if provider == "kalshi" else "POLY"
                 market_id = str(details.get("market_id", "")).strip()
-                market = STATE.poly_markets.get(market_id) if market_id else {}
+                market = STATE.kalshi_markets.get(market_id) if (provider == "kalshi" and market_id) else (STATE.poly_markets.get(market_id) if market_id else {})
                 market_label = str(details.get("market_label", "")).strip() or str(market.get("question", "") if isinstance(market, dict) else "").strip() or market_id
                 amount = float(details.get("amount", 0.0) or 0.0)
                 shares = float(details.get("shares", 0.0) or 0.0)
                 item.update(
                     {
-                        "symbol": "POLY",
-                        "side": "POLY",
-                        "effective_action": "POLY_BET",
+                        "provider": provider,
+                        "provider_event_type": str(details.get("provider_event_type", "") or "bet").strip().lower() or "bet",
+                        "ticker": str(details.get("ticker", "") or "").strip().upper(),
+                        "symbol": provider_tag,
+                        "side": provider_tag,
+                        "effective_action": f"{provider_tag}_BET",
                         "qty": shares,
                         "notional": amount,
                         "market_id": market_id,
@@ -190,17 +195,22 @@ def get_discovery_activity(limit: int = 40) -> dict:
                     }
                 )
             elif etype == "poly_sell":
+                provider = str(details.get("provider", "poly") or "poly").strip().lower() or "poly"
+                provider_tag = "KAL" if provider == "kalshi" else "POLY"
                 market_id = str(details.get("market_id", "")).strip()
-                market = STATE.poly_markets.get(market_id) if market_id else {}
+                market = STATE.kalshi_markets.get(market_id) if (provider == "kalshi" and market_id) else (STATE.poly_markets.get(market_id) if market_id else {})
                 market_label = str(details.get("market_label", "")).strip() or str(market.get("question", "") if isinstance(market, dict) else "").strip() or market_id
                 amount = float(details.get("amount", details.get("proceeds", 0.0)) or 0.0)
                 shares = float(details.get("shares", 0.0) or 0.0)
                 realized = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
                 item.update(
                     {
-                        "symbol": "POLY",
-                        "side": "POLY",
-                        "effective_action": "POLY_SELL",
+                        "provider": provider,
+                        "provider_event_type": str(details.get("provider_event_type", "") or "sell").strip().lower() or "sell",
+                        "ticker": str(details.get("ticker", "") or "").strip().upper(),
+                        "symbol": provider_tag,
+                        "side": provider_tag,
+                        "effective_action": f"{provider_tag}_SELL",
                         "qty": shares,
                         "notional": amount,
                         "market_id": market_id,
@@ -212,17 +222,22 @@ def get_discovery_activity(limit: int = 40) -> dict:
                     }
                 )
             else:
+                provider = str(details.get("provider", "poly") or "poly").strip().lower() or "poly"
+                provider_tag = "KAL" if provider == "kalshi" else "POLY"
                 market_id = str(details.get("market_id", "")).strip()
-                market = STATE.poly_markets.get(market_id) if market_id else {}
+                market = STATE.kalshi_markets.get(market_id) if (provider == "kalshi" and market_id) else (STATE.poly_markets.get(market_id) if market_id else {})
                 market_label = str(details.get("market_label", "")).strip() or str(market.get("question", "") if isinstance(market, dict) else "").strip() or market_id
                 payout = float(details.get("payout", 0.0) or 0.0)
                 cost_basis = float(details.get("cost_basis", 0.0) or 0.0)
                 realized = float(details.get("realized_gross", details.get("realized_delta", 0.0)) or 0.0)
                 item.update(
                     {
-                        "symbol": "POLY",
-                        "side": "POLY",
-                        "effective_action": "POLY_RESOLVED",
+                        "provider": provider,
+                        "provider_event_type": str(details.get("provider_event_type", "") or "resolve").strip().lower() or "resolve",
+                        "ticker": str(details.get("ticker", "") or "").strip().upper(),
+                        "symbol": provider_tag,
+                        "side": provider_tag,
+                        "effective_action": f"{provider_tag}_RESOLVED",
                         "qty": 0.0,
                         "notional": payout,
                         "market_id": market_id,

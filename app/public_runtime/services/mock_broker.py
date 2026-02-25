@@ -23,6 +23,18 @@ except (TypeError, ValueError):
     _POLY_SLIPPAGE = 0.003
 _POLY_SLIPPAGE = max(0.0, min(0.2, _POLY_SLIPPAGE))
 
+try:
+    _KALSHI_TAKER_FEE = float(os.getenv("CRAB_KALSHI_TAKER_FEE", "0.001") or 0.001)
+except (TypeError, ValueError):
+    _KALSHI_TAKER_FEE = 0.001
+_KALSHI_TAKER_FEE = max(0.0, min(0.05, _KALSHI_TAKER_FEE))
+
+try:
+    _KALSHI_SLIPPAGE = float(os.getenv("CRAB_KALSHI_SLIPPAGE", "0.003") or 0.003)
+except (TypeError, ValueError):
+    _KALSHI_SLIPPAGE = 0.003
+_KALSHI_SLIPPAGE = max(0.0, min(0.2, _KALSHI_SLIPPAGE))
+
 
 def _synthetic_price(symbol: str) -> float:
     s = str(symbol or "").strip().upper()
@@ -276,6 +288,8 @@ def place_poly_bet(*, agent_uuid: str, market_id: str, outcome: str, amount: flo
             "poly_bet",
             agent_uuid=resolved_uuid,
             details={
+                "provider": "poly",
+                "provider_event_type": "bet",
                 "market_id": safe_market_id,
                 "market_label": str(market.get("question", "") or safe_market_id),
                 "outcome": safe_outcome,
@@ -293,6 +307,7 @@ def place_poly_bet(*, agent_uuid: str, market_id: str, outcome: str, amount: flo
 
     return {
         "execution_mode": "mock",
+        "provider": "poly",
         "bet": {
             "market_id": safe_market_id,
             "outcome": safe_outcome,
@@ -422,6 +437,8 @@ def place_poly_sell(*, agent_uuid: str, market_id: str, outcome: str, shares: fl
             "poly_sell",
             agent_uuid=resolved_uuid,
             details={
+                "provider": "poly",
+                "provider_event_type": "sell",
                 "market_id": safe_market_id,
                 "market_label": str(market.get("question", "") or safe_market_id),
                 "outcome": safe_outcome,
@@ -443,6 +460,7 @@ def place_poly_sell(*, agent_uuid: str, market_id: str, outcome: str, shares: fl
 
     return {
         "execution_mode": "mock",
+        "provider": "poly",
         "sell": {
             "market_id": safe_market_id,
             "outcome": safe_outcome,
@@ -450,6 +468,300 @@ def place_poly_sell(*, agent_uuid: str, market_id: str, outcome: str, shares: fl
             "quote_price": round(float(odds), 6),
             "effective_price": round(effective_price, 6),
             "slippage": round(float(_POLY_SLIPPAGE), 6),
+            "proceeds": round(proceeds, 6),
+            "fee": round(fee, 6),
+            "released_cost": round(released_cost, 6),
+            "lock_released": round(released_cost, 6),
+            "realized_gross": round(realized_gross, 6),
+            "status": "ACCEPTED",
+            "created_at": str(event.get("created_at", "") or datetime.now(timezone.utc).isoformat()),
+        },
+    }
+
+
+def _kalshi_market_key(raw_market_id: str) -> str:
+    raw = str(raw_market_id or "").strip()
+    if not raw:
+        return ""
+    if raw.lower().startswith("kalshi:"):
+        return raw
+    return f"kalshi:{raw.upper()}"
+
+
+def _resolve_kalshi_market_unlocked(raw_market_input: str) -> tuple[str, dict[str, Any] | None]:
+    raw = str(raw_market_input or "").strip()
+    if not raw:
+        return "", None
+    if raw in STATE.kalshi_markets:
+        market = STATE.kalshi_markets.get(raw)
+        return raw, dict(market) if isinstance(market, dict) else None
+    key = _kalshi_market_key(raw)
+    if key in STATE.kalshi_markets:
+        market = STATE.kalshi_markets.get(key)
+        return key, dict(market) if isinstance(market, dict) else None
+    ticker = raw.upper()
+    for market_id, market in STATE.kalshi_markets.items():
+        if not isinstance(market, dict):
+            continue
+        if str(market.get("ticker", "")).strip().upper() != ticker:
+            continue
+        return str(market_id), dict(market)
+    return key, None
+
+
+def list_kalshi_markets() -> list[dict[str, Any]]:
+    with STATE.lock:
+        rows = [dict(item) for item in STATE.kalshi_markets.values() if isinstance(item, dict)]
+    for row in rows:
+        row.setdefault("status", "open")
+        row.setdefault("resolved", False)
+        row.setdefault("winning_outcome", "")
+        row.setdefault("closed", False)
+        row.setdefault("resolution_source", "")
+        row.setdefault("last_checked_at", "")
+        row.setdefault("resolved_at", "")
+        row.setdefault("settlement_status", "settled" if bool(row.get("resolved")) else "")
+    rows.sort(key=lambda item: str(item.get("market_id", "")))
+    return rows
+
+
+def place_kalshi_bet(*, agent_uuid: str, market_id: str, outcome: str, amount: float) -> dict[str, Any]:
+    resolved_uuid = resolve_agent_uuid(agent_uuid)
+    if not resolved_uuid:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+
+    safe_market_input = str(market_id or "").strip()
+    safe_outcome = str(outcome or "").strip().upper()
+    safe_amount = float(amount or 0.0)
+    if not safe_market_input or safe_outcome not in {"YES", "NO"} or safe_amount <= 0:
+        raise HTTPException(status_code=400, detail="invalid_kalshi_bet")
+
+    with STATE.lock:
+        account = STATE.accounts.get(resolved_uuid)
+        safe_market_id, market = _resolve_kalshi_market_unlocked(safe_market_input)
+        if not account:
+            raise HTTPException(status_code=404, detail="agent_not_found")
+        if not isinstance(market, dict):
+            raise HTTPException(status_code=404, detail="market_not_found")
+        if bool(market.get("resolved")):
+            raise HTTPException(status_code=400, detail="market_already_resolved")
+        if bool(market.get("closed")) or str(market.get("status", "")).strip().lower() in {"closed", "settled"}:
+            raise HTTPException(status_code=400, detail="market_closed")
+
+        outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), dict) else {}
+        odds = outcomes.get(safe_outcome)
+        if not isinstance(odds, (int, float)) or float(odds) <= 0:
+            raise HTTPException(status_code=400, detail="invalid_outcome")
+        effective_price = float(odds) * (1.0 + float(_KALSHI_SLIPPAGE))
+        if effective_price <= 0.0:
+            raise HTTPException(status_code=400, detail="invalid_effective_price")
+        fee = float(safe_amount) * float(_KALSHI_TAKER_FEE)
+        required_cash = float(safe_amount) + fee
+        if float(account.cash) < required_cash:
+            raise HTTPException(status_code=400, detail="insufficient_cash")
+
+        shares = float(safe_amount / effective_price)
+        account.cash = float(account.cash) - required_cash
+        account.cash_locked = max(0.0, float(getattr(account, "cash_locked", 0.0) or 0.0)) + float(safe_amount)
+        account.kalshi_fee_paid = max(0.0, float(getattr(account, "kalshi_fee_paid", 0.0) or 0.0)) + fee
+
+        if not isinstance(getattr(account, "kalshi_positions", None), dict):
+            account.kalshi_positions = {}
+        if not isinstance(getattr(account, "kalshi_cost_basis", None), dict):
+            account.kalshi_cost_basis = {}
+        if not isinstance(getattr(account, "kalshi_fee_by_market", None), dict):
+            account.kalshi_fee_by_market = {}
+        if safe_market_id not in account.kalshi_positions:
+            account.kalshi_positions[safe_market_id] = {}
+        if safe_market_id not in account.kalshi_cost_basis:
+            account.kalshi_cost_basis[safe_market_id] = {}
+
+        account.kalshi_positions[safe_market_id][safe_outcome] = float(account.kalshi_positions[safe_market_id].get(safe_outcome, 0.0) or 0.0) + shares
+        account.kalshi_cost_basis[safe_market_id][safe_outcome] = float(account.kalshi_cost_basis[safe_market_id].get(safe_outcome, 0.0) or 0.0) + safe_amount
+        account.kalshi_fee_by_market[safe_market_id] = float(account.kalshi_fee_by_market.get(safe_market_id, 0.0) or 0.0) + fee
+
+        ticker = str(market.get("ticker", "") or safe_market_id).strip().upper()
+        event = STATE.record_operation(
+            "poly_bet",
+            agent_uuid=resolved_uuid,
+            details={
+                "provider": "kalshi",
+                "provider_event_type": "bet",
+                "ticker": ticker,
+                "market_id": safe_market_id,
+                "market_label": str(market.get("question", "") or safe_market_id),
+                "outcome": safe_outcome,
+                "amount": safe_amount,
+                "shares": shares,
+                "quote_price": float(odds),
+                "effective_price": effective_price,
+                "slippage": float(_KALSHI_SLIPPAGE),
+                "fee": fee,
+                "lock_amount": float(safe_amount),
+                "execution_mode": "mock",
+            },
+        )
+        STATE.save_runtime_state()
+
+    return {
+        "execution_mode": "mock",
+        "provider": "kalshi",
+        "bet": {
+            "ticker": ticker,
+            "market_id": safe_market_id,
+            "outcome": safe_outcome,
+            "amount": safe_amount,
+            "shares": shares,
+            "quote_price": round(float(odds), 6),
+            "effective_price": round(effective_price, 6),
+            "slippage": round(float(_KALSHI_SLIPPAGE), 6),
+            "fee": round(fee, 6),
+            "lock_amount": round(float(safe_amount), 6),
+            "status": "ACCEPTED",
+            "created_at": str(event.get("created_at", "") or datetime.now(timezone.utc).isoformat()),
+        },
+    }
+
+
+def place_kalshi_sell(*, agent_uuid: str, market_id: str, outcome: str, shares: float) -> dict[str, Any]:
+    resolved_uuid = resolve_agent_uuid(agent_uuid)
+    if not resolved_uuid:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+
+    safe_market_input = str(market_id or "").strip()
+    safe_outcome = str(outcome or "").strip().upper()
+    safe_shares = float(shares or 0.0)
+    if not safe_market_input or safe_outcome not in {"YES", "NO"} or safe_shares <= 0:
+        raise HTTPException(status_code=400, detail="invalid_kalshi_sell")
+
+    with STATE.lock:
+        account = STATE.accounts.get(resolved_uuid)
+        safe_market_id, market = _resolve_kalshi_market_unlocked(safe_market_input)
+        if not account:
+            raise HTTPException(status_code=404, detail="agent_not_found")
+        if not isinstance(market, dict):
+            raise HTTPException(status_code=404, detail="market_not_found")
+        if bool(market.get("resolved")):
+            raise HTTPException(status_code=400, detail="market_already_resolved")
+        if bool(market.get("closed")) or str(market.get("status", "")).strip().lower() in {"closed", "settled"}:
+            raise HTTPException(status_code=400, detail="market_closed")
+
+        outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), dict) else {}
+        odds = outcomes.get(safe_outcome)
+        if not isinstance(odds, (int, float)) or float(odds) <= 0:
+            raise HTTPException(status_code=400, detail="invalid_outcome")
+
+        market_positions = account.kalshi_positions.get(safe_market_id, {}) if isinstance(getattr(account, "kalshi_positions", None), dict) else {}
+        held_shares = float(market_positions.get(safe_outcome, 0.0) or 0.0) if isinstance(market_positions, dict) else 0.0
+        if held_shares <= 0.0:
+            raise HTTPException(status_code=400, detail="insufficient_kalshi_position")
+        if safe_shares > held_shares + 1e-12:
+            raise HTTPException(status_code=400, detail="insufficient_kalshi_position")
+        safe_shares = min(safe_shares, held_shares)
+
+        market_costs = account.kalshi_cost_basis.get(safe_market_id, {}) if isinstance(getattr(account, "kalshi_cost_basis", None), dict) else {}
+        outcome_cost_basis = float(market_costs.get(safe_outcome, 0.0) or 0.0) if isinstance(market_costs, dict) else 0.0
+        if outcome_cost_basis <= 0.0 and held_shares > 0.0:
+            total_cost_basis = 0.0
+            if isinstance(market_costs, dict):
+                for item in market_costs.values():
+                    try:
+                        total_cost_basis += max(0.0, float(item or 0.0))
+                    except Exception:
+                        continue
+            total_market_shares = 0.0
+            if isinstance(market_positions, dict):
+                for item in market_positions.values():
+                    try:
+                        total_market_shares += max(0.0, float(item or 0.0))
+                    except Exception:
+                        continue
+            if total_cost_basis > 0.0 and total_market_shares > 0.0:
+                outcome_cost_basis = total_cost_basis * (held_shares / total_market_shares)
+
+        sell_ratio = safe_shares / held_shares if held_shares > 0.0 else 0.0
+        released_cost = max(0.0, outcome_cost_basis * sell_ratio)
+        effective_price = float(odds) * (1.0 - float(_KALSHI_SLIPPAGE))
+        if effective_price <= 0.0:
+            raise HTTPException(status_code=400, detail="invalid_effective_price")
+        proceeds = safe_shares * effective_price
+        fee = proceeds * float(_KALSHI_TAKER_FEE)
+        realized_gross = proceeds - released_cost
+
+        account.cash = float(account.cash) + proceeds - fee
+        account.cash_locked = max(0.0, float(getattr(account, "cash_locked", 0.0) or 0.0) - released_cost)
+        account.kalshi_fee_paid = max(0.0, float(getattr(account, "kalshi_fee_paid", 0.0) or 0.0)) + fee
+        account.kalshi_realized_pnl = float(getattr(account, "kalshi_realized_pnl", 0.0) or 0.0) + realized_gross
+        if not isinstance(getattr(account, "kalshi_fee_by_market", None), dict):
+            account.kalshi_fee_by_market = {}
+        account.kalshi_fee_by_market[safe_market_id] = float(account.kalshi_fee_by_market.get(safe_market_id, 0.0) or 0.0) + fee
+
+        remaining_shares = max(0.0, held_shares - safe_shares)
+        remaining_cost = max(0.0, outcome_cost_basis - released_cost)
+        if remaining_shares <= 1e-12:
+            if isinstance(market_positions, dict):
+                market_positions.pop(safe_outcome, None)
+        else:
+            if not isinstance(market_positions, dict):
+                market_positions = {}
+                account.kalshi_positions[safe_market_id] = market_positions
+            market_positions[safe_outcome] = remaining_shares
+
+        if not isinstance(market_costs, dict):
+            market_costs = {}
+            account.kalshi_cost_basis[safe_market_id] = market_costs
+        if remaining_cost <= 1e-12:
+            market_costs.pop(safe_outcome, None)
+        else:
+            market_costs[safe_outcome] = remaining_cost
+
+        if isinstance(market_positions, dict):
+            has_position = any(abs(float(item or 0.0)) > 1e-12 for item in market_positions.values())
+            if not has_position:
+                account.kalshi_positions.pop(safe_market_id, None)
+        if isinstance(market_costs, dict):
+            has_cost = any(abs(float(item or 0.0)) > 1e-12 for item in market_costs.values())
+            if not has_cost:
+                account.kalshi_cost_basis.pop(safe_market_id, None)
+
+        ticker = str(market.get("ticker", "") or safe_market_id).strip().upper()
+        event = STATE.record_operation(
+            "poly_sell",
+            agent_uuid=resolved_uuid,
+            details={
+                "provider": "kalshi",
+                "provider_event_type": "sell",
+                "ticker": ticker,
+                "market_id": safe_market_id,
+                "market_label": str(market.get("question", "") or safe_market_id),
+                "outcome": safe_outcome,
+                "amount": proceeds,
+                "shares": safe_shares,
+                "quote_price": float(odds),
+                "effective_price": effective_price,
+                "slippage": float(_KALSHI_SLIPPAGE),
+                "fee": fee,
+                "lock_amount": released_cost,
+                "released_cost": released_cost,
+                "realized_gross": realized_gross,
+                "held_shares_before": held_shares,
+                "remaining_shares": remaining_shares,
+                "execution_mode": "mock",
+            },
+        )
+        STATE.save_runtime_state()
+
+    return {
+        "execution_mode": "mock",
+        "provider": "kalshi",
+        "sell": {
+            "ticker": ticker,
+            "market_id": safe_market_id,
+            "outcome": safe_outcome,
+            "shares": safe_shares,
+            "quote_price": round(float(odds), 6),
+            "effective_price": round(effective_price, 6),
+            "slippage": round(float(_KALSHI_SLIPPAGE), 6),
             "proceeds": round(proceeds, 6),
             "fee": round(fee, 6),
             "released_cost": round(released_cost, 6),

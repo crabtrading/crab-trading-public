@@ -12,6 +12,7 @@ def _agent_symbols(agent_uuid: str) -> list[str]:
             return []
         symbols.extend([str(item).upper() for item in account.positions.keys()])
         symbols.extend([str(item).upper() for item in account.poly_positions.keys()])
+        symbols.extend([str(item).upper() for item in account.kalshi_positions.keys()])
     return normalize_symbols(symbols)[:6]
 
 
@@ -44,6 +45,8 @@ def leaderboard_rows(limit: int = 200) -> list[dict]:
                             details = event.get("details") if isinstance(event.get("details"), dict) else {}
                             if str(details.get("market_id", "")).strip() != str(market_id):
                                 continue
+                            if str(details.get("provider", "poly") or "poly").strip().lower() != "poly":
+                                continue
                             if event_type == "poly_bet":
                                 try:
                                     market_cost_total += float(details.get("amount", 0.0) or 0.0)
@@ -55,9 +58,54 @@ def leaderboard_rows(limit: int = 200) -> list[dict]:
                                 except Exception:
                                     continue
                     unresolved_poly_cost_basis += max(0.0, market_cost_total)
-            settled_pnl = float(getattr(account, "realized_pnl", 0.0) or 0.0) + float(getattr(account, "poly_realized_pnl", 0.0) or 0.0)
-            open_pnl = float(valuation["poly_market_value"]) - float(unresolved_poly_cost_basis)
-            fee_paid = max(0.0, float(getattr(account, "poly_fee_paid", 0.0) or 0.0))
+            unresolved_kalshi_cost_basis = 0.0
+            if isinstance(getattr(account, "kalshi_cost_basis", None), dict):
+                for market_id, costs in account.kalshi_cost_basis.items():
+                    market = STATE.kalshi_markets.get(str(market_id), {})
+                    if bool((market or {}).get("resolved")):
+                        continue
+                    market_cost_total = 0.0
+                    if not isinstance(costs, dict):
+                        costs = {}
+                    for amount in costs.values():
+                        try:
+                            market_cost_total += float(amount or 0.0)
+                        except Exception:
+                            continue
+                    if market_cost_total <= 0.0:
+                        for event in STATE.activity_log:
+                            event_type = str(event.get("type", "")).strip().lower()
+                            if event_type not in {"poly_bet", "poly_sell"}:
+                                continue
+                            if str(event.get("agent_uuid", "")).strip() != str(account.agent_uuid):
+                                continue
+                            details = event.get("details") if isinstance(event.get("details"), dict) else {}
+                            if str(details.get("provider", "poly") or "poly").strip().lower() != "kalshi":
+                                continue
+                            if str(details.get("market_id", "")).strip() != str(market_id):
+                                continue
+                            if event_type == "poly_bet":
+                                try:
+                                    market_cost_total += float(details.get("amount", 0.0) or 0.0)
+                                except Exception:
+                                    continue
+                            else:
+                                try:
+                                    market_cost_total -= float(details.get("released_cost", details.get("lock_amount", 0.0)) or 0.0)
+                                except Exception:
+                                    continue
+                    unresolved_kalshi_cost_basis += max(0.0, market_cost_total)
+            settled_pnl = (
+                float(getattr(account, "realized_pnl", 0.0) or 0.0)
+                + float(getattr(account, "poly_realized_pnl", 0.0) or 0.0)
+                + float(getattr(account, "kalshi_realized_pnl", 0.0) or 0.0)
+            )
+            unresolved_prediction_cost_basis = float(unresolved_poly_cost_basis) + float(unresolved_kalshi_cost_basis)
+            open_pnl = float(valuation["prediction_market_value"]) - unresolved_prediction_cost_basis
+            fee_paid = (
+                max(0.0, float(getattr(account, "poly_fee_paid", 0.0) or 0.0))
+                + max(0.0, float(getattr(account, "kalshi_fee_paid", 0.0) or 0.0))
+            )
             net_pnl = settled_pnl + open_pnl - fee_paid
             cash_available = float(valuation["cash"])
             cash_locked = max(0.0, float(getattr(account, "cash_locked", 0.0) or 0.0))
@@ -84,6 +132,8 @@ def leaderboard_rows(limit: int = 200) -> list[dict]:
                     "stock_market_value": round(float(valuation["stock_market_value"]), 4),
                     "crypto_market_value": round(float(valuation["crypto_market_value"]), 4),
                     "poly_market_value": round(float(valuation["poly_market_value"]), 4),
+                    "kalshi_market_value": round(float(valuation.get("kalshi_market_value", 0.0) or 0.0), 4),
+                    "prediction_market_value": round(float(valuation.get("prediction_market_value", 0.0) or 0.0), 4),
                     "settled_pnl": round(settled_pnl, 4),
                     "open_pnl": round(open_pnl, 4),
                     "fee_paid": round(fee_paid, 4),

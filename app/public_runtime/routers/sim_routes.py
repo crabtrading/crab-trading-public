@@ -40,6 +40,11 @@ def get_sim_account(agent_uuid: str = Depends(require_agent)) -> dict:
             "poly_fee_paid": round(float(getattr(account, "poly_fee_paid", 0.0) or 0.0), 4),
             "poly_realized_pnl": round(float(account.poly_realized_pnl), 4),
             "poly_market_value": round(float(valuation["poly_market_value"]), 4),
+            "kalshi_positions": dict(account.kalshi_positions),
+            "kalshi_fee_paid": round(float(getattr(account, "kalshi_fee_paid", 0.0) or 0.0), 4),
+            "kalshi_realized_pnl": round(float(getattr(account, "kalshi_realized_pnl", 0.0) or 0.0), 4),
+            "kalshi_market_value": round(float(valuation.get("kalshi_market_value", 0.0) or 0.0), 4),
+            "prediction_market_value": round(float(valuation.get("prediction_market_value", 0.0) or 0.0), 4),
             "equity_estimate": round(float(valuation["equity"]), 4),
             "return_pct": round(float(valuation["return_pct"]), 6),
         }
@@ -175,10 +180,13 @@ def get_agent_recent_trades(agent_id: str, limit: int = 20) -> dict:
             "stock_market_value": round(float(valuation["stock_market_value"]), 4),
             "crypto_market_value": round(float(valuation["crypto_market_value"]), 4),
             "poly_market_value": round(float(valuation["poly_market_value"]), 4),
+            "kalshi_market_value": round(float(valuation.get("kalshi_market_value", 0.0) or 0.0), 4),
+            "prediction_market_value": round(float(valuation.get("prediction_market_value", 0.0) or 0.0), 4),
             "balance": round(float(valuation["equity"]), 4),
             "return_pct": round(float(valuation["return_pct"]), 6),
             "stock_realized_pnl": round(float(account.realized_pnl), 4),
             "poly_realized_pnl": round(float(account.poly_realized_pnl), 4),
+            "kalshi_realized_pnl": round(float(getattr(account, "kalshi_realized_pnl", 0.0) or 0.0), 4),
         },
         "trades": trades,
         "total": len(trades),
@@ -222,3 +230,42 @@ def create_poly_sell(req: SimPolySellCreateRequest, agent_uuid: str = Depends(re
 @router.post("/sim/poly/close")
 def close_poly_position(req: SimPolySellCreateRequest, agent_uuid: str = Depends(require_agent)) -> dict:
     return create_poly_sell(req=req, agent_uuid=agent_uuid)
+
+
+@router.get("/sim/kalshi/markets")
+def list_kalshi_markets(agent_uuid: str = Depends(require_agent)) -> dict:
+    rows = mock_broker.list_kalshi_markets()
+    return {
+        "status": "ok",
+        "execution_mode": "mock",
+        "provider": "kalshi",
+        "agent_uuid": agent_uuid,
+        "agent_id": STATE.display_name_for(agent_uuid),
+        "markets": rows,
+        "total": len(rows),
+    }
+
+
+@router.post("/sim/kalshi/bets")
+def create_kalshi_bet(req: SimPolyBetCreateRequest, agent_uuid: str = Depends(require_agent)) -> dict:
+    return mock_broker.place_kalshi_bet(
+        agent_uuid=agent_uuid,
+        market_id=req.market_id,
+        outcome=req.outcome,
+        amount=float(req.amount),
+    )
+
+
+@router.post("/sim/kalshi/sell")
+def create_kalshi_sell(req: SimPolySellCreateRequest, agent_uuid: str = Depends(require_agent)) -> dict:
+    return mock_broker.place_kalshi_sell(
+        agent_uuid=agent_uuid,
+        market_id=req.market_id,
+        outcome=req.outcome,
+        shares=float(req.shares),
+    )
+
+
+@router.post("/sim/kalshi/close")
+def close_kalshi_position(req: SimPolySellCreateRequest, agent_uuid: str = Depends(require_agent)) -> dict:
+    return create_kalshi_sell(req=req, agent_uuid=agent_uuid)
