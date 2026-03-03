@@ -41,6 +41,7 @@
     recentTransactionsLoading: false,
     recentTransactionsError: "",
     recentTransactionsExpanded: false,
+    pinnedTopAgentUuid: "",
     sectionVisibleCount: {
       top: SECTION_DEFAULT_VISIBLE,
       trending: SECTION_DEFAULT_VISIBLE,
@@ -182,8 +183,8 @@
   }
 
   function formatMoney(value) {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return "";
+    const num = toFiniteNumber(value);
+    if (num == null) return "";
     const abs = Math.abs(num);
     const sign = num < 0 ? "-" : "";
     return `${sign}$${abs.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -647,6 +648,7 @@
         strategy_text: String(data.strategy_text || "").trim(),
         symbols,
         category: String(data.category || "").trim().toLowerCase(),
+        target_mode: String(data.target_mode || data.mode || "").trim().toLowerCase(),
         live_days: toLiveDays(data),
         trades_executed_total: toTradesExecuted(data),
         registered_at: String(data.registered_at || "").trim(),
@@ -698,6 +700,7 @@
         agent_uuid: agentUuid,
         agent_id: agentId,
         avatar: String(data.avatar || "").trim(),
+        execution_mode: String(data.execution_mode || "").trim().toLowerCase(),
         provider,
         provider_event_type: String(data.provider_event_type || "").trim().toLowerCase(),
         ticker: String(data.ticker || "").trim().toUpperCase(),
@@ -712,6 +715,7 @@
         payout: Number(data.payout),
         cost_basis: Number(data.cost_basis),
         realized_gross: Number(data.realized_gross),
+        balance_usd: toFiniteNumber(data.balance_usd),
         qty: Number(data.qty),
         fill_price: Number(data.fill_price),
         notional: Number(data.notional),
@@ -781,14 +785,41 @@
 
   function sortByReturn(rows) {
     return [...rows].sort((a, b) => {
+      const liveDiff = livePriorityBucket(a) - livePriorityBucket(b);
+      if (liveDiff !== 0) return liveDiff;
       const diff = Number(b.return_pct || 0) - Number(a.return_pct || 0);
       if (diff !== 0) return diff;
       return String(a.agent_id || "").localeCompare(String(b.agent_id || ""));
     });
   }
 
+  function livePriorityBucket(row) {
+    const mode = String(row && row.target_mode ? row.target_mode : "").trim().toLowerCase();
+    return mode === "live" ? 0 : 1;
+  }
+
+  function pinRowsByAgentUuid(rows) {
+    const list = Array.isArray(rows) ? [...rows] : [];
+    const pinnedUuid = String(state.pinnedTopAgentUuid || "").trim();
+    if (!pinnedUuid || !list.length) return list;
+    const idx = list.findIndex((row) => String(row && row.agent_uuid ? row.agent_uuid : "").trim() === pinnedUuid);
+    if (idx <= 0) return list;
+    const [target] = list.splice(idx, 1);
+    list.unshift(target);
+    return list;
+  }
+
+  function ensurePinnedRowIncluded(rows) {
+    const list = Array.isArray(rows) ? [...rows] : [];
+    const pinnedUuid = String(state.pinnedTopAgentUuid || "").trim();
+    if (!pinnedUuid) return list;
+    return list;
+  }
+
   function sortByTrending(rows) {
     return [...rows].sort((a, b) => {
+      const liveDiff = livePriorityBucket(a) - livePriorityBucket(b);
+      if (liveDiff !== 0) return liveDiff;
       const activityDiff = Number(b.activity_events || 0) - Number(a.activity_events || 0);
       if (activityDiff !== 0) return activityDiff;
       const returnDiff = Number(b.return_pct || 0) - Number(a.return_pct || 0);
@@ -799,6 +830,8 @@
 
   function sortByNew(rows) {
     return [...rows].sort((a, b) => {
+      const liveDiff = livePriorityBucket(a) - livePriorityBucket(b);
+      if (liveDiff !== 0) return liveDiff;
       const dateA = parseIsoDate(a.registered_at);
       const dateB = parseIsoDate(b.registered_at);
       const tsA = dateA ? dateA.getTime() : 0;
@@ -825,7 +858,7 @@
   }
 
   function buildSections() {
-    const activeRows = dedupeRows(state.activeRows);
+    const activeRows = dedupeRows(ensurePinnedRowIncluded(state.activeRows));
     const uniqueCount = activeRows.length;
 
     if (uniqueCount === 0) {
@@ -838,14 +871,14 @@
           id: "all",
           title: "All Agents",
           note: `${WINDOW_LABEL[state.activeWindow] || "30 Days"} snapshot`,
-          rows: sortByReturn(activeRows),
+          rows: pinRowsByAgentUuid(sortByReturn(activeRows)),
         },
       ];
     }
 
     const used = new Set();
     const sectionCap = 12;
-    const topPool = sortByReturn(activeRows);
+    const topPool = pinRowsByAgentUuid(sortByReturn(activeRows));
     const trendingPool = sortByTrending(dedupeRows(state.trendingRows));
     const newPool = sortByNew(rowsForNewSection(activeRows));
 
@@ -887,7 +920,7 @@
         id: "all",
         title: "All Agents",
         note: `${WINDOW_LABEL[state.activeWindow] || "30 Days"} snapshot`,
-        rows: sortByReturn(activeRows),
+        rows: pinRowsByAgentUuid(sortByReturn(activeRows)),
       });
     }
 
@@ -1291,6 +1324,20 @@
     try {
       const rows = await fetchRecentTransactions(RECENT_TRANSACTION_FETCH_LIMIT);
       state.recentTransactions = rows;
+      const prevPinnedUuid = String(state.pinnedTopAgentUuid || "").trim();
+      const pinned = rows.find((row) => {
+        const uuid = String(row && row.agent_uuid ? row.agent_uuid : "").trim();
+        if (!uuid) return false;
+        const executionMode = String(row && row.execution_mode ? row.execution_mode : "").trim().toLowerCase();
+        const provider = String(row && row.provider ? row.provider : "").trim().toLowerCase();
+        return executionMode === "live" || provider === "kraken" || provider === "binance_us";
+      });
+      if (pinned && String(pinned.agent_uuid || "").trim()) {
+        state.pinnedTopAgentUuid = String(pinned.agent_uuid || "").trim();
+      }
+      if (String(state.pinnedTopAgentUuid || "").trim() !== prevPinnedUuid && Array.isArray(state.activeRows) && state.activeRows.length) {
+        renderSections();
+      }
       state.recentTransactionsError = "";
     } catch (_err) {
       state.recentTransactions = [];

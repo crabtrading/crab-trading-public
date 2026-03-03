@@ -174,6 +174,27 @@ def _seo_live_snapshot_valuation(agent_uuid: str) -> Optional[dict]:
 
     profile = LIVE_STATE.get_profile(auid)
     baseline_equity = max(0.0, float(profile.get("baseline_equity") or 0.0))
+    if baseline_equity <= 0:
+        first_snapshot = LIVE_STATE.first_balance_snapshot(
+            auid,
+            provider=str(snapshot.get("provider") or ""),
+        )
+        if isinstance(first_snapshot, dict):
+            try:
+                baseline_equity = max(0.0, float(first_snapshot.get("equity_usd") or 0.0))
+            except Exception:
+                baseline_equity = 0.0
+        if baseline_equity > 0:
+            try:
+                LIVE_STATE.upsert_profile(
+                    auid,
+                    {
+                        "provider": str(snapshot.get("provider") or ""),
+                        "baseline_equity": float(baseline_equity),
+                    },
+                )
+            except Exception:
+                pass
     return_pct = ((equity - baseline_equity) / baseline_equity) * 100.0 if baseline_equity > 0 else 0.0
     return {
         "cash": float(cash),
@@ -187,6 +208,127 @@ def _seo_live_snapshot_valuation(agent_uuid: str) -> Optional[dict]:
         "stock_position_count": 0,
         "has_open_position": bool(crypto > 0),
     }
+
+
+def _seo_parse_recent_ts(value: object) -> datetime:
+    raw = str(value or "").strip()
+    if not raw:
+        return datetime.fromtimestamp(0, tz=timezone.utc)
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return datetime.fromtimestamp(0, tz=timezone.utc)
+
+
+def _seo_normalize_live_symbol(symbol: str, provider: str) -> str:
+    raw = str(symbol or "").strip().upper()
+    if not raw:
+        return ""
+    compact = raw.replace("/", "")
+    provider_key = str(provider or "").strip().lower()
+    if provider_key == "kraken":
+        if compact in {"XXBTZUSD", "XBTUSD", "BTCUSD"}:
+            return "BTCUSD"
+        if compact.startswith("XBT"):
+            return f"BTC{compact[3:]}"
+    return compact
+
+
+def _seo_live_trade_event_from_order_row(row: dict) -> Optional[dict]:
+    if not isinstance(row, dict):
+        return None
+    if str(row.get("event_type") or "").strip().lower() != "order":
+        return None
+
+    status = str(row.get("status") or "").strip().upper()
+    side = str(row.get("side") or "").strip().upper()
+    if side not in {"BUY", "SELL"}:
+        return None
+
+    try:
+        executed_qty = float(row.get("executed_qty") or 0.0)
+    except Exception:
+        executed_qty = 0.0
+    if status not in {"FILLED", "PARTIALLY_FILLED", "CLOSED"} and executed_qty <= 0:
+        return None
+
+    try:
+        requested_qty = float(row.get("qty") or 0.0)
+    except Exception:
+        requested_qty = 0.0
+    qty = executed_qty if executed_qty > 0 else requested_qty
+    if qty <= 0:
+        return None
+
+    try:
+        fill_price = float(row.get("avg_fill_price") or 0.0)
+    except Exception:
+        fill_price = 0.0
+    try:
+        raw_notional = float(row.get("notional") or 0.0)
+    except Exception:
+        raw_notional = 0.0
+    try:
+        fallback_notional = float(row.get("total_spend_usd") or row.get("cost") or 0.0)
+    except Exception:
+        fallback_notional = 0.0
+    notional = raw_notional if raw_notional > 0 else fallback_notional
+    if fill_price <= 0 and qty > 0 and notional > 0:
+        fill_price = notional / qty
+
+    provider = str(row.get("provider") or "").strip().lower()
+    symbol = _seo_normalize_live_symbol(str(row.get("symbol") or ""), provider)
+    return {
+        "id": 0,
+        "type": "stock_order",
+        "agent_uuid": str(row.get("agent_uuid") or "").strip(),
+        "agent_id": _agent_display_name(str(row.get("agent_uuid") or "").strip()),
+        "created_at": str(row.get("created_at") or ""),
+        "details": {
+            "symbol": symbol,
+            "side": side,
+            "effective_action": "BUY_TO_OPEN" if side == "BUY" else "SELL_TO_CLOSE",
+            "qty": float(qty),
+            "fill_price": float(fill_price),
+            "notional": float(notional),
+            "execution_mode": "live",
+            "provider": provider,
+            "exchange_status": status,
+            "exchange_order_id": str(row.get("exchange_order_id") or ""),
+        },
+    }
+
+
+def _seo_live_recent_trade_events(agent_uuid: str, limit: int = 10) -> list[dict]:
+    auid = str(agent_uuid or "").strip()
+    if not auid:
+        return []
+    safe_limit = max(1, min(int(limit or 10), 20))
+    try:
+        rows = LIVE_STATE.list_order_journal(auid, limit=max(safe_limit * 4, 200))
+    except Exception:
+        return []
+
+    events: list[dict] = []
+    for row in rows:
+        event = _seo_live_trade_event_from_order_row(row)
+        if event is None:
+            continue
+        events.append(event)
+        if len(events) >= safe_limit:
+            break
+    events.sort(
+        key=lambda item: (
+            _seo_parse_recent_ts(item.get("created_at")),
+            int(item.get("id", 0)),
+        ),
+        reverse=True,
+    )
+    return events[:safe_limit]
 
 
 @app.get("/forum", response_class=HTMLResponse)
@@ -752,6 +894,7 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
     algo_shared = False
     rank: Optional[int] = None
     active_total = 0
+    live_recent_trades = _seo_live_recent_trade_events(resolved_uuid, limit=10) if resolved_mode == "live" else []
     with STATE.lock:
         if _HIDE_TEST_DATA and _is_test_agent(resolved_uuid):
             raise HTTPException(status_code=404, detail="agent_not_found")
@@ -800,6 +943,8 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
             recent_trades.append(event)
         recent_trades.reverse()
         recent_trades = recent_trades[:10]
+        if not recent_trades and live_recent_trades:
+            recent_trades = list(live_recent_trades)
 
         if trade_id is not None:
             trade_event = _find_trade_event_locked(trade_id)
@@ -864,9 +1009,16 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> str:
             effective_action = str(details.get("effective_action", "")).upper() or side
             qty = float(details.get("qty", 0.0))
             px = float(details.get("fill_price", 0.0))
+            live_meta = ""
+            if str(details.get("execution_mode", "")).strip().lower() == "live":
+                provider = str(details.get("provider", "")).strip().upper().replace("_", "-")
+                exchange_status = str(details.get("exchange_status", "")).strip().upper()
+                live_meta_parts = [part for part in ["LIVE", provider, exchange_status] if part]
+                if live_meta_parts:
+                    live_meta = f" · {' '.join(live_meta_parts)}"
             trade_lines.append(
                 f"<li>{html_escape(when)} · {html_escape(effective_action)} {qty:.4f} "
-                f"<a href=\"{html_escape(_symbol_page_path(sym))}\">{html_escape(sym)}</a> @ ${px:.2f}{share_link}</li>"
+                f"<a href=\"{html_escape(_symbol_page_path(sym))}\">{html_escape(sym)}</a> @ ${px:.2f}{html_escape(live_meta)}{share_link}</li>"
             )
         elif etype == "poly_bet":
             market_id = str(details.get("market_id", ""))
