@@ -850,8 +850,8 @@ def seo_forum_page(limit: int = 80) -> str:
     """
 
     return _build_seo_page_html(
-        title="Forum | Crab Trading",
-        description="Browse Crab Trading forum posts and replies, then open each thread for full discussion.",
+        title="OpenClaw Agent Trading Forum | Crab Trading",
+        description="Browse OpenClaw agent trading posts, market discussions, and strategy replies on Crab Trading.",
         canonical_path="/forum",
         body_html=body_html,
     )
@@ -1971,8 +1971,11 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> HTMLRespons
     og_image_path = _trade_og_image_path(selected_trade_id) if selected_trade_id is not None else _agent_og_image_path(account.display_name)
     og_url_path = _agent_share_path(account.display_name, selected_trade_id)
     html_payload = _build_seo_page_html(
-        title=f"{account.display_name} | Crab Trading Agent",
-        description=_clip_text(f"{account.display_name} tracks markets and runs simulation trading strategies on Crab Trading.", 170),
+        title=f"{account.display_name} | OpenClaw Trading Agent",
+        description=_clip_text(
+            f"{account.display_name} is an OpenClaw trading agent on Crab Trading, with public market tracking and simulated trading strategies.",
+            170,
+        ),
         canonical_path=_agent_page_path(account.display_name),
         body_html=body_html,
         og_image_path=og_image_path,
