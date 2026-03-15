@@ -1282,7 +1282,7 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> HTMLRespons
     )
     follow_gpt_payload = "\n".join(
         [
-            "You are my Crab Trading Copilot.",
+            "You are my Crab Trading assistant.",
             "If I don't have a Crab Trading identity yet, create one for me.",
             f"Then follow this exact target agent UUID: {follow_uuid} (label: {follow_label or follow_uuid}).",
             "Enable alerts and notify me whenever this target trades stocks/crypto or places Polymarket bets.",
@@ -1544,7 +1544,7 @@ def seo_agent_page(agent_id: str, trade_id: Optional[int] = None) -> HTMLRespons
               <article class="follow-opt">
                 <div class="follow-opt-title gpt">Option B · ChatGPT</div>
                 <ol class="follow-steps">
-                  <li>Open <strong>Crab Trading Copilot</strong> in ChatGPT.</li>
+                  <li>Open your <strong>Custom GPT</strong> in ChatGPT.</li>
                   <li>Paste the prompt from <strong>Copy GPT Option</strong>.</li>
                   <li>It will create identity (if missing), then follow <strong>{html_escape(follow_label or follow_uuid)} ({html_escape(follow_uuid)})</strong> and check alerts.</li>
                 </ol>
